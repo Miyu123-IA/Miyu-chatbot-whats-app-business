@@ -99,9 +99,10 @@ async function consultarClaude(historial, mensajeNuevo) {
   });
 
   const data = await response.json();
-  if (data.error) throw new Error(data.error.message);
-  if (!data.content || !data.content[0]) throw new Error("Respuesta vacía de Claude");
-  return data.content[0].text;
+ if (data.error) throw new Error(data.error.message);
+if (!data.content || !data.content[0]) throw new Error("Respuesta vacía");
+return data.content[0].text;
+
 }
 
 async function enviarMensajeWhatsApp(telefono, mensaje) {
