@@ -435,418 +435,349 @@ app.get("/dashboard", async (req, res) => {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MIYU Beauty — Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap');
-
     :root {
-      --rosa: #f4a7b9;
-      --rosa-dark: #e8849b;
-      --crema: #fdf6f0;
-      --cafe: #3d2b1f;
-      --cafe-light: #6b4c3b;
-      --dorado: #c9a96e;
-      --verde: #7db89f;
-      --bg: #faf5f0;
+      --rosa: #f4a7b9; --rosa-dark: #e8849b; --crema: #fdf6f0;
+      --cafe: #3d2b1f; --cafe-light: #6b4c3b; --dorado: #c9a96e;
+      --verde: #7db89f; --bg: #faf5f0;
     }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'DM Sans',sans-serif; background:var(--bg); color:var(--cafe); min-height:100vh; }
+    header { background:var(--cafe); padding:18px 40px; display:flex; align-items:center; justify-content:space-between; }
+    .logo { font-family:'Playfair Display',serif; color:var(--rosa); font-size:24px; letter-spacing:2px; }
+    .logo span { color:var(--dorado); }
+    .status-dot { width:9px;height:9px;background:var(--verde);border-radius:50%;display:inline-block;margin-right:7px;animation:pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.6;transform:scale(1.3)} }
+    .live-badge { color:var(--verde);font-size:13px;font-weight:500; }
+    .tabs { display:flex; gap:0; background:var(--cafe); padding:0 40px; border-top:1px solid rgba(255,255,255,0.1); }
+    .tab { padding:12px 24px; color:rgba(255,255,255,0.5); font-size:13px; cursor:pointer; border-bottom:3px solid transparent; transition:all .2s; }
+    .tab.active { color:var(--rosa); border-bottom-color:var(--rosa); }
+    .tab:hover { color:white; }
+    .container { max-width:1300px; margin:0 auto; padding:32px 20px; }
+    .page { display:none; } .page.active { display:block; }
+    .grid-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin-bottom:32px; }
+    .stat-card { background:white; border-radius:14px; padding:22px; box-shadow:0 2px 12px rgba(61,43,31,.07); border-left:4px solid var(--rosa); transition:transform .2s; }
+    .stat-card:hover { transform:translateY(-2px); }
+    .stat-card.verde { border-left-color:var(--verde); }
+    .stat-card.dorado { border-left-color:var(--dorado); }
+    .stat-card.cafe { border-left-color:var(--cafe-light); }
+    .stat-label { font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--cafe-light); margin-bottom:6px; }
+    .stat-value { font-family:'Playfair Display',serif; font-size:34px; color:var(--cafe); line-height:1; }
+    .stat-sub { font-size:11px; color:#bbb; margin-top:4px; }
+    .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:20px; }
+    @media(max-width:768px) { .grid-2{grid-template-columns:1fr} }
+    .card { background:white; border-radius:14px; padding:24px; box-shadow:0 2px 12px rgba(61,43,31,.07); margin-bottom:20px; }
+    .card-title { font-family:'Playfair Display',serif; font-size:17px; color:var(--cafe); margin-bottom:18px; padding-bottom:12px; border-bottom:2px solid var(--crema); display:flex; align-items:center; justify-content:space-between; }
+    .badge { display:inline-block; padding:2px 9px; border-radius:20px; font-size:10px; font-weight:500; }
+    .badge-entrante { background:#e8f5e9;color:#388e3c; }
+    .badge-saliente { background:#fce4ec;color:#c62828; }
+    .badge-pendiente { background:#fff3e0;color:#e65100; }
+    .badge-confirmado { background:#e8f5e9;color:#2e7d32; }
+    .badge-entregado { background:#e3f2fd;color:#1565c0; }
+    .refresh-btn { background:var(--rosa);color:white;border:none;padding:9px 22px;border-radius:30px;font-family:'DM Sans',sans-serif;font-size:13px;cursor:pointer;transition:background .2s;font-weight:500; }
+    .refresh-btn:hover { background:var(--rosa-dark); }
+    .empty { color:#ccc;font-size:13px;text-align:center;padding:30px; }
 
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    /* CLIENTES */
+    .cliente-row { display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--crema);cursor:pointer;transition:background .15s;border-radius:8px;padding-left:8px; }
+    .cliente-row:hover { background:var(--crema); }
+    .cliente-row:last-child { border-bottom:none; }
+    .avatar { width:38px;height:38px;background:linear-gradient(135deg,var(--rosa),var(--dorado));border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;color:white;font-size:14px;flex-shrink:0; }
+    .cliente-info { flex:1; }
+    .cliente-tel { font-weight:500;font-size:13px; }
+    .cliente-tipo { font-size:11px;color:#bbb; }
+    .cliente-compras { font-size:12px;color:var(--dorado);font-weight:500; }
 
-    body {
-      font-family: 'DM Sans', sans-serif;
-      background: var(--bg);
-      color: var(--cafe);
-      min-height: 100vh;
-    }
+    /* CONVERSACION MODAL */
+    .modal-overlay { display:none;position:fixed;inset:0;background:rgba(61,43,31,.5);z-index:100;align-items:center;justify-content:center; }
+    .modal-overlay.open { display:flex; }
+    .modal { background:white;border-radius:20px;width:90%;max-width:600px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden; }
+    .modal-header { padding:20px 24px;border-bottom:2px solid var(--crema);display:flex;justify-content:space-between;align-items:center; }
+    .modal-title { font-family:'Playfair Display',serif;font-size:18px;color:var(--cafe); }
+    .modal-close { background:none;border:none;font-size:22px;cursor:pointer;color:var(--cafe-light);line-height:1; }
+    .chat-container { flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:10px;background:#f9f4ef; }
+    .bubble { max-width:75%;padding:10px 14px;border-radius:16px;font-size:13px;line-height:1.5; }
+    .bubble-user { background:white;border-bottom-left-radius:4px;align-self:flex-start;box-shadow:0 1px 4px rgba(0,0,0,.08); }
+    .bubble-miyu { background:var(--rosa);color:white;border-bottom-right-radius:4px;align-self:flex-end;box-shadow:0 1px 4px rgba(244,167,185,.4); }
+    .bubble-time { font-size:10px;opacity:.6;margin-top:4px; }
+    .bubble-label { font-size:10px;font-weight:600;margin-bottom:3px;opacity:.7; }
 
-    header {
-      background: var(--cafe);
-      padding: 20px 40px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      box-shadow: 0 2px 20px rgba(61,43,31,0.3);
-    }
-
-    .logo {
-      font-family: 'Playfair Display', serif;
-      color: var(--rosa);
-      font-size: 26px;
-      letter-spacing: 2px;
-    }
-
-    .logo span { color: var(--dorado); }
-
-    .status-dot {
-      width: 10px; height: 10px;
-      background: var(--verde);
-      border-radius: 50%;
-      display: inline-block;
-      margin-right: 8px;
-      animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.6; transform: scale(1.3); }
-    }
-
-    .live-badge {
-      color: var(--verde);
-      font-size: 13px;
-      font-weight: 500;
-    }
-
-    .container { max-width: 1200px; margin: 0 auto; padding: 40px 20px; }
-
-    .grid-stats {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 20px;
-      margin-bottom: 40px;
-    }
-
-    .stat-card {
-      background: white;
-      border-radius: 16px;
-      padding: 24px;
-      box-shadow: 0 2px 12px rgba(61,43,31,0.08);
-      border-left: 4px solid var(--rosa);
-      transition: transform 0.2s;
-    }
-
-    .stat-card:hover { transform: translateY(-3px); }
-    .stat-card.verde { border-left-color: var(--verde); }
-    .stat-card.dorado { border-left-color: var(--dorado); }
-    .stat-card.cafe { border-left-color: var(--cafe-light); }
-
-    .stat-label {
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: var(--cafe-light);
-      margin-bottom: 8px;
-    }
-
-    .stat-value {
-      font-family: 'Playfair Display', serif;
-      font-size: 36px;
-      color: var(--cafe);
-      line-height: 1;
-    }
-
-    .stat-sub { font-size: 12px; color: #999; margin-top: 4px; }
-
-    .grid-main {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 24px;
-      margin-bottom: 24px;
-    }
-
-    @media (max-width: 768px) { .grid-main { grid-template-columns: 1fr; } }
-
-    .card {
-      background: white;
-      border-radius: 16px;
-      padding: 28px;
-      box-shadow: 0 2px 12px rgba(61,43,31,0.08);
-    }
-
-    .card-title {
-      font-family: 'Playfair Display', serif;
-      font-size: 18px;
-      color: var(--cafe);
-      margin-bottom: 20px;
-      padding-bottom: 12px;
-      border-bottom: 2px solid var(--crema);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .mensaje-item {
-      padding: 12px 0;
-      border-bottom: 1px solid var(--crema);
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .mensaje-item:last-child { border-bottom: none; }
-
-    .msg-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .msg-telefono {
-      font-weight: 500;
-      font-size: 13px;
-      color: var(--cafe);
-    }
-
-    .msg-time {
-      font-size: 11px;
-      color: #bbb;
-    }
-
-    .msg-text {
-      font-size: 13px;
-      color: var(--cafe-light);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      max-width: 100%;
-    }
-
-    .badge {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 20px;
-      font-size: 10px;
-      font-weight: 500;
-    }
-
-    .badge-entrante { background: #e8f5e9; color: #388e3c; }
-    .badge-saliente { background: #fce4ec; color: #c62828; }
-    .badge-pendiente { background: #fff3e0; color: #e65100; }
-    .badge-confirmado { background: #e8f5e9; color: #2e7d32; }
-    .badge-entregado { background: #e3f2fd; color: #1565c0; }
-
-    .pedido-item {
-      padding: 14px 0;
-      border-bottom: 1px solid var(--crema);
-    }
-
-    .pedido-item:last-child { border-bottom: none; }
-
-    .pedido-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 4px;
-    }
-
-    .pedido-tel { font-weight: 500; font-size: 13px; }
-    .pedido-fecha { font-size: 11px; color: #bbb; }
-    .pedido-productos { font-size: 12px; color: var(--cafe-light); }
-
-    .clientes-list { display: flex; flex-direction: column; gap: 0; }
-
-    .cliente-item {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      padding: 12px 0;
-      border-bottom: 1px solid var(--crema);
-    }
-
-    .cliente-item:last-child { border-bottom: none; }
-
-    .avatar {
-      width: 38px; height: 38px;
-      background: linear-gradient(135deg, var(--rosa), var(--dorado));
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: 'Playfair Display', serif;
-      color: white;
-      font-size: 15px;
-      flex-shrink: 0;
-    }
-
-    .cliente-info { flex: 1; }
-    .cliente-tel { font-weight: 500; font-size: 13px; }
-    .cliente-tipo { font-size: 11px; color: #bbb; }
-    .cliente-compras { font-size: 12px; color: var(--dorado); font-weight: 500; }
-
-    .refresh-btn {
-      background: var(--rosa);
-      color: white;
-      border: none;
-      padding: 10px 24px;
-      border-radius: 30px;
-      font-family: 'DM Sans', sans-serif;
-      font-size: 14px;
-      cursor: pointer;
-      transition: background 0.2s;
-      font-weight: 500;
-    }
-
-    .refresh-btn:hover { background: var(--rosa-dark); }
-
-    .empty { color: #ccc; font-size: 13px; text-align: center; padding: 20px; }
-
-    .full-card { grid-column: 1 / -1; }
-
-    .productos-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-      gap: 12px;
-    }
-
-    .producto-pill {
-      background: var(--crema);
-      border-radius: 12px;
-      padding: 12px 16px;
-      font-size: 12px;
-    }
-
-    .producto-nombre { font-weight: 500; color: var(--cafe); margin-bottom: 4px; }
-    .producto-precio { color: var(--dorado); font-size: 13px; font-weight: 600; }
-
-    #loading { text-align: center; padding: 60px; color: var(--cafe-light); font-size: 15px; }
+    /* GRAFICAS */
+    .chart-wrap { position:relative;height:220px; }
   </style>
 </head>
 <body>
-  <header>
-    <div class="logo">MIYU <span>Beauty</span></div>
-    <div>
-      <span class="status-dot"></span>
-      <span class="live-badge">Dashboard en vivo</span>
-    </div>
-  </header>
+<header>
+  <div class="logo">MIYU <span>Beauty</span></div>
+  <div><span class="status-dot"></span><span class="live-badge">En vivo</span></div>
+</header>
+<div class="tabs">
+  <div class="tab active" onclick="showTab('resumen')">📊 Resumen</div>
+  <div class="tab" onclick="showTab('conversaciones')">💬 Conversaciones</div>
+  <div class="tab" onclick="showTab('pedidos')">📦 Pedidos</div>
+</div>
 
-  <div class="container" id="app">
-    <div id="loading">Cargando datos... 🌸</div>
+<div class="container">
+
+  <!-- RESUMEN -->
+  <div class="page active" id="tab-resumen">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+      <div>
+        <h1 style="font-family:'Playfair Display',serif;font-size:26px">Panel de Control</h1>
+        <p style="color:#bbb;font-size:12px;margin-top:3px" id="last-update">Cargando...</p>
+      </div>
+      <button class="refresh-btn" onclick="cargarTodo()">↻ Actualizar</button>
+    </div>
+    <div class="grid-stats" id="stats-cards"></div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">📈 Mensajes por día (últimos 7 días)</div>
+        <div class="chart-wrap"><canvas id="chartMensajes"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">🧴 Productos más mencionados</div>
+        <div class="chart-wrap"><canvas id="chartProductos"></canvas></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">👥 Clientes recientes <span style="font-size:12px;color:#bbb;font-family:'DM Sans',sans-serif">Click para ver conversación</span></div>
+      <div id="clientes-list"></div>
+    </div>
   </div>
 
-  <script>
-    const SUPABASE_URL = "${SUPABASE_URL}";
-    const SUPABASE_KEY = "${SUPABASE_KEY}";
+  <!-- CONVERSACIONES -->
+  <div class="page" id="tab-conversaciones">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+      <h1 style="font-family:'Playfair Display',serif;font-size:26px">Conversaciones</h1>
+      <button class="refresh-btn" onclick="cargarTodo()">↻ Actualizar</button>
+    </div>
+    <div id="conv-list"></div>
+  </div>
 
-    async function query(tabla, params = "") {
-      const res = await fetch(SUPABASE_URL + "/rest/v1/" + tabla + params, {
-        headers: {
-          "apikey": SUPABASE_KEY,
-          "Authorization": "Bearer " + SUPABASE_KEY
-        }
-      });
-      return res.json();
+  <!-- PEDIDOS -->
+  <div class="page" id="tab-pedidos">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+      <h1 style="font-family:'Playfair Display',serif;font-size:26px">Pedidos</h1>
+      <button class="refresh-btn" onclick="cargarTodo()">↻ Actualizar</button>
+    </div>
+    <div id="pedidos-list"></div>
+  </div>
+
+</div>
+
+<!-- MODAL CONVERSACION -->
+<div class="modal-overlay" id="modal" onclick="cerrarModal(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">Conversación</div>
+      <button class="modal-close" onclick="document.getElementById('modal').classList.remove('open')">✕</button>
+    </div>
+    <div class="chat-container" id="chat-messages"></div>
+  </div>
+</div>
+
+<script>
+  const SUPABASE_URL = "${SUPABASE_URL}";
+  const SUPABASE_KEY = "${SUPABASE_KEY}";
+  let chartMensajes = null, chartProductos = null;
+  let todosLosMensajes = [], todosLosClientes = [], todosLosPedidos = [], todasLasConvs = [];
+
+  async function q(tabla, params="") {
+    const r = await fetch(SUPABASE_URL+"/rest/v1/"+tabla+params, {
+      headers:{"apikey":SUPABASE_KEY,"Authorization":"Bearer "+SUPABASE_KEY}
+    });
+    return r.json();
+  }
+
+  function showTab(id) {
+    document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
+    document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+    document.getElementById("tab-"+id).classList.add("active");
+    event.target.classList.add("active");
+  }
+
+  function timeAgo(d) {
+    const diff = Date.now()-new Date(d).getTime(), mins=Math.floor(diff/60000);
+    if(mins<1) return "ahora"; if(mins<60) return mins+"m";
+    const hrs=Math.floor(mins/60); if(hrs<24) return hrs+"h";
+    return Math.floor(hrs/24)+"d";
+  }
+
+  function fmtTime(d) {
+    return new Date(d).toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"});
+  }
+
+  function fmtDate(d) {
+    return new Date(d).toLocaleDateString("es-MX",{day:"2-digit",month:"short"});
+  }
+
+  function inicial(tel) { return tel?tel.slice(-2).toUpperCase():"??"; }
+
+  async function verConversacion(telefono, nombre) {
+    const msgs = await q("mensajes","?telefono=eq."+telefono+"&order=created_at.asc&limit=100");
+    document.getElementById("modal-title").textContent = (nombre||"+"+telefono);
+    const cont = document.getElementById("chat-messages");
+    if(!msgs||msgs.length===0) {
+      cont.innerHTML='<div class="empty">Sin mensajes guardados</div>';
+    } else {
+      cont.innerHTML = msgs.map(m=>\`
+        <div style="display:flex;flex-direction:column;align-items:\${m.tipo==='saliente'?'flex-end':'flex-start'}">
+          <div class="bubble-label" style="align-self:\${m.tipo==='saliente'?'flex-end':'flex-start'}">\${m.tipo==='saliente'?'🌸 Miyu':'👤 Cliente'}</div>
+          <div class="bubble bubble-\${m.tipo==='saliente'?'miyu':'user'}">\${m.contenido||'(imagen/audio)'}</div>
+          <div class="bubble-time" style="align-self:\${m.tipo==='saliente'?'flex-end':'flex-start'}">\${fmtDate(m.created_at)} \${fmtTime(m.created_at)}</div>
+        </div>\`).join("");
     }
+    document.getElementById("modal").classList.add("open");
+    setTimeout(()=>{ cont.scrollTop=cont.scrollHeight; },100);
+  }
 
-    function timeAgo(dateStr) {
-      const diff = Date.now() - new Date(dateStr).getTime();
-      const mins = Math.floor(diff / 60000);
-      if (mins < 1) return "ahora";
-      if (mins < 60) return mins + "m";
-      const hrs = Math.floor(mins / 60);
-      if (hrs < 24) return hrs + "h";
-      return Math.floor(hrs / 24) + "d";
+  function cerrarModal(e) {
+    if(e.target===document.getElementById("modal")) document.getElementById("modal").classList.remove("open");
+  }
+
+  function renderStats() {
+    const hoy = new Date().toDateString();
+    const mensajesHoy = todosLosMensajes.filter(m=>new Date(m.created_at).toDateString()===hoy).length;
+    const pedidosPend = todosLosPedidos.filter(p=>p.estado==="pendiente").length;
+    document.getElementById("stats-cards").innerHTML = \`
+      <div class="stat-card"><div class="stat-label">💬 Mensajes hoy</div><div class="stat-value">\${mensajesHoy}</div><div class="stat-sub">de \${todosLosMensajes.length} en total</div></div>
+      <div class="stat-card verde"><div class="stat-label">👥 Clientes</div><div class="stat-value">\${todosLosClientes.length}</div><div class="stat-sub">registrados</div></div>
+      <div class="stat-card dorado"><div class="stat-label">📦 Pedidos pendientes</div><div class="stat-value">\${pedidosPend}</div><div class="stat-sub">por confirmar</div></div>
+      <div class="stat-card cafe"><div class="stat-label">📨 Total mensajes</div><div class="stat-value">\${todosLosMensajes.length}</div><div class="stat-sub">conversaciones guardadas</div></div>
+    \`;
+  }
+
+  function renderGraficas() {
+    // Mensajes por día
+    const dias = {};
+    for(let i=6;i>=0;i--) {
+      const d = new Date(); d.setDate(d.getDate()-i);
+      dias[d.toDateString()] = 0;
     }
+    todosLosMensajes.forEach(m => {
+      const k = new Date(m.created_at).toDateString();
+      if(dias[k]!==undefined) dias[k]++;
+    });
+    const labels = Object.keys(dias).map(k=>{ const d=new Date(k); return d.toLocaleDateString("es-MX",{weekday:"short",day:"numeric"}); });
+    const values = Object.values(dias);
 
-    function inicial(tel) {
-      return tel ? tel.slice(-2).toUpperCase() : "??";
-    }
+    if(chartMensajes) chartMensajes.destroy();
+    chartMensajes = new Chart(document.getElementById("chartMensajes"), {
+      type:"bar",
+      data:{ labels, datasets:[{ label:"Mensajes", data:values, backgroundColor:"rgba(244,167,185,0.7)", borderColor:"#e8849b", borderWidth:2, borderRadius:8 }] },
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ y:{beginAtZero:true,ticks:{stepSize:1}}, x:{grid:{display:false}} } }
+    });
 
-    async function cargarDatos() {
-      const [mensajes, clientes, pedidos] = await Promise.all([
-        query("mensajes", "?order=created_at.desc&limit=50"),
-        query("clientes", "?order=updated_at.desc&limit=20"),
-        query("pedidos", "?order=created_at.desc&limit=20")
-      ]);
+    // Productos mencionados
+    const prods = { "solar":0,"cushion":0,"serum":0,"crema":0,"anua":0,"mascarilla":0,"aceite":0,"parche":0,"delineador":0,"mascara":0 };
+    const nombres = { "solar":"☀️ Solar","cushion":"💄 Cushion","serum":"✨ Serum","crema":"🧴 Crema","anua":"🌿 Anua","mascarilla":"🎭 Mascarilla","aceite":"💧 Aceite","parche":"👁️ Parche","delineador":"✏️ Delineador","mascara":"👁 Máscara" };
+    todosLosMensajes.filter(m=>m.tipo==="entrante").forEach(m => {
+      if(!m.contenido) return;
+      const t = m.contenido.toLowerCase();
+      Object.keys(prods).forEach(p=>{ if(t.includes(p)) prods[p]++; });
+    });
+    const sorted = Object.entries(prods).sort((a,b)=>b[1]-a[1]).slice(0,6);
 
-      const totalMensajes = mensajes.length || 0;
-      const totalClientes = clientes.length || 0;
-      const pedidosPendientes = pedidos.filter(p => p.estado === "pendiente").length || 0;
-      const hoy = new Date().toDateString();
-      const mensajesHoy = mensajes.filter(m => new Date(m.created_at).toDateString() === hoy).length;
+    if(chartProductos) chartProductos.destroy();
+    chartProductos = new Chart(document.getElementById("chartProductos"), {
+      type:"doughnut",
+      data:{ labels:sorted.map(s=>nombres[s[0]]), datasets:[{ data:sorted.map(s=>s[1]||1), backgroundColor:["#f4a7b9","#c9a96e","#7db89f","#b4a7d6","#f9cb9c","#a2c4c9"], borderWidth:0 }] },
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:"right", labels:{ font:{size:11}, boxWidth:12 } } } }
+    });
+  }
 
-      document.getElementById("app").innerHTML = \`
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:32px;">
-          <div>
-            <h1 style="font-family:'Playfair Display',serif;font-size:28px;color:var(--cafe)">Panel de Control</h1>
-            <p style="color:#bbb;font-size:13px;margin-top:4px">Actualizado hace unos segundos</p>
-          </div>
-          <button class="refresh-btn" onclick="cargarDatos()">↻ Actualizar</button>
+  function renderClientes() {
+    const el = document.getElementById("clientes-list");
+    if(!todosLosClientes.length) { el.innerHTML='<div class="empty">Sin clientes aún</div>'; return; }
+    el.innerHTML = todosLosClientes.slice(0,10).map(c=>\`
+      <div class="cliente-row" onclick="verConversacion('\${c.telefono}','\${c.nombre||'+'+c.telefono}')">
+        <div class="avatar">\${inicial(c.telefono)}</div>
+        <div class="cliente-info">
+          <div class="cliente-tel">+\${c.telefono}</div>
+          <div class="cliente-tipo">\${c.tipo_cliente||"CLIENTE NUEVA"}\${c.nombre?" · "+c.nombre:""}</div>
         </div>
-
-        <div class="grid-stats">
-          <div class="stat-card">
-            <div class="stat-label">💬 Mensajes hoy</div>
-            <div class="stat-value">\${mensajesHoy}</div>
-            <div class="stat-sub">de \${totalMensajes} en total</div>
-          </div>
-          <div class="stat-card verde">
-            <div class="stat-label">👥 Clientes</div>
-            <div class="stat-value">\${totalClientes}</div>
-            <div class="stat-sub">registrados</div>
-          </div>
-          <div class="stat-card dorado">
-            <div class="stat-label">📦 Pedidos pendientes</div>
-            <div class="stat-value">\${pedidosPendientes}</div>
-            <div class="stat-sub">por confirmar</div>
-          </div>
-          <div class="stat-card cafe">
-            <div class="stat-label">📨 Total mensajes</div>
-            <div class="stat-value">\${totalMensajes}</div>
-            <div class="stat-sub">conversaciones guardadas</div>
-          </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="cliente-compras">\${c.compras||0} compras</div>
+          <span style="color:#bbb;font-size:18px">›</span>
         </div>
+      </div>\`).join("");
+  }
 
-        <div class="grid-main">
-          <div class="card">
-            <div class="card-title">💬 Últimos mensajes</div>
-            \${mensajes.length === 0
-              ? '<div class="empty">Sin mensajes aún</div>'
-              : mensajes.slice(0, 10).map(m => \`
-              <div class="mensaje-item">
-                <div class="msg-header">
-                  <span class="msg-telefono">+\${m.telefono}</span>
-                  <div style="display:flex;gap:6px;align-items:center">
-                    <span class="badge badge-\${m.tipo}">\${m.tipo}</span>
-                    <span class="msg-time">\${timeAgo(m.created_at)}</span>
-                  </div>
-                </div>
-                <div class="msg-text">\${m.contenido || "(imagen/audio)"}</div>
-              </div>\`).join("")
-            }
-          </div>
+  function renderConversaciones() {
+    const el = document.getElementById("conv-list");
+    if(!todosLosClientes.length) { el.innerHTML='<div class="card"><div class="empty">Sin conversaciones aún</div></div>'; return; }
 
-          <div class="card">
-            <div class="card-title">👥 Clientes recientes</div>
-            <div class="clientes-list">
-              \${clientes.length === 0
-                ? '<div class="empty">Sin clientes aún</div>'
-                : clientes.slice(0, 8).map(c => \`
-                <div class="cliente-item">
-                  <div class="avatar">\${inicial(c.telefono)}</div>
-                  <div class="cliente-info">
-                    <div class="cliente-tel">+\${c.telefono}</div>
-                    <div class="cliente-tipo">\${c.tipo_cliente || "CLIENTE NUEVA"} \${c.nombre ? "· " + c.nombre : ""}</div>
-                  </div>
-                  <div class="cliente-compras">\${c.compras || 0} compras</div>
-                </div>\`).join("")
-              }
+    // Agrupar último mensaje por teléfono
+    const ultimoMsj = {};
+    todosLosMensajes.forEach(m=>{ if(!ultimoMsj[m.telefono]||new Date(m.created_at)>new Date(ultimoMsj[m.telefono].created_at)) ultimoMsj[m.telefono]=m; });
+
+    el.innerHTML = todosLosClientes.map(c => {
+      const ult = ultimoMsj[c.telefono];
+      const conteo = todosLosMensajes.filter(m=>m.telefono===c.telefono).length;
+      return \`
+      <div class="card" style="margin-bottom:12px;cursor:pointer" onclick="verConversacion('\${c.telefono}','\${c.nombre||'+'+c.telefono}')">
+        <div style="display:flex;align-items:center;gap:14px">
+          <div class="avatar" style="width:46px;height:46px;font-size:16px">\${inicial(c.telefono)}</div>
+          <div style="flex:1">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="font-weight:600;font-size:14px">+\${c.telefono}\${c.nombre?" · "+c.nombre:""}</span>
+              <span style="font-size:11px;color:#bbb">\${ult?timeAgo(ult.created_at):""}</span>
+            </div>
+            <div style="font-size:12px;color:var(--cafe-light);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:400px">
+              \${ult?(ult.tipo==="saliente"?"🌸 ":"")+ult.contenido:"Sin mensajes"}
             </div>
           </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="background:var(--rosa);color:white;border-radius:12px;padding:2px 8px;font-size:11px;font-weight:600">\${conteo}</div>
+            <div style="font-size:10px;color:#bbb;margin-top:3px">\${c.tipo_cliente||"NUEVA"}</div>
+          </div>
         </div>
+      </div>\`; }).join("");
+  }
 
-        <div class="card full-card" style="margin-bottom:24px">
-          <div class="card-title">📦 Pedidos</div>
-          \${pedidos.length === 0
-            ? '<div class="empty">Sin pedidos registrados aún</div>'
-            : pedidos.map(p => \`
-            <div class="pedido-item">
-              <div class="pedido-header">
-                <span class="pedido-tel">+\${p.telefono}</span>
-                <div style="display:flex;gap:8px;align-items:center">
-                  <span class="badge badge-\${p.estado}">\${p.estado}</span>
-                  <span class="pedido-fecha">\${timeAgo(p.created_at)}</span>
-                </div>
-              </div>
-              <div class="pedido-productos">\${p.productos || "Productos por confirmar"} \${p.nombre_cliente ? "· " + p.nombre_cliente : ""}</div>
-            </div>\`).join("")
-          }
+  function renderPedidos() {
+    const el = document.getElementById("pedidos-list");
+    if(!todosLosPedidos.length) { el.innerHTML='<div class="card"><div class="empty">Sin pedidos registrados aún 📦</div></div>'; return; }
+    el.innerHTML = todosLosPedidos.map(p=>\`
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <div style="font-weight:600;font-size:14px">+\${p.telefono}\${p.nombre_cliente?" · "+p.nombre_cliente:""}</div>
+            <div style="font-size:12px;color:var(--cafe-light);margin-top:4px">\${p.productos||"Productos por confirmar"}</div>
+            \${p.direccion?'<div style="font-size:11px;color:#bbb;margin-top:3px">📍 '+p.direccion+'</div>':""}
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <span class="badge badge-\${p.estado}">\${p.estado}</span>
+            <div style="font-size:11px;color:#bbb;margin-top:5px">\${fmtDate(p.created_at)}</div>
+            \${p.total?'<div style="color:var(--dorado);font-weight:600;font-size:14px;margin-top:3px">$'+p.total+' MXN</div>':""}
+          </div>
         </div>
-      \`;
-    }
+      </div>\`).join("");
+  }
 
-    cargarDatos();
-    setInterval(cargarDatos, 30000); // Auto-refresh cada 30 segundos
-  </script>
+  async function cargarTodo() {
+    document.getElementById("last-update").textContent = "Actualizando...";
+    const [msgs, clientes, pedidos] = await Promise.all([
+      q("mensajes","?order=created_at.desc&limit=500"),
+      q("clientes","?order=updated_at.desc&limit=100"),
+      q("pedidos","?order=created_at.desc&limit=100")
+    ]);
+    todosLosMensajes = msgs||[];
+    todosLosClientes = clientes||[];
+    todosLosPedidos = pedidos||[];
+    renderStats();
+    renderGraficas();
+    renderClientes();
+    renderConversaciones();
+    renderPedidos();
+    document.getElementById("last-update").textContent = "Actualizado: "+new Date().toLocaleTimeString("es-MX");
+  }
+
+  cargarTodo();
+  setInterval(cargarTodo, 30000);
+</script>
 </body>
 </html>`);
 });
