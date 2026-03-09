@@ -183,39 +183,40 @@ async function transcribirAudio(audioBuffer) {
     form.append("model", "whisper-1");
     form.append("language", "es");
 
-    // Serializar el form a buffer para enviarlo con https nativo
-    const formBuffer = await new Promise((resolve, reject) => {
-      const chunks = [];
-      form.on("data", chunk => chunks.push(chunk));
-      form.on("end", () => resolve(Buffer.concat(chunks)));
-      form.on("error", reject);
-    });
+    // Usar getBuffer() que es síncrono y confiable
+    const formBuffer = form.getBuffer();
+    const formHeaders = form.getHeaders();
+
+    console.log("Enviando a Whisper, buffer size:", formBuffer.length);
 
     const result = await new Promise((resolve, reject) => {
       const options = {
         hostname: "api.openai.com",
         path: "/v1/audio/transcriptions",
         method: "POST",
+        timeout: 30000,
         headers: {
-          ...form.getHeaders(),
+          ...formHeaders,
           "Authorization": `Bearer ${OPENAI_API_KEY}`,
           "Content-Length": formBuffer.length
         }
       };
       const req = https.request(options, res => {
         let data = "";
-        res.on("data", chunk => data += chunk);
+        res.on("data", chunk => { data += chunk; });
         res.on("end", () => {
+          console.log("Respuesta Whisper raw:", data.substring(0, 200));
           try { resolve(JSON.parse(data)); }
-          catch (e) { reject(new Error("JSON invalido: " + data)); }
+          catch (e) { reject(new Error("JSON invalido: " + data.substring(0, 100))); }
         });
       });
-      req.on("error", reject);
+      req.on("error", (e) => { console.error("Error https:", e.message); reject(e); });
+      req.on("timeout", () => { req.destroy(); reject(new Error("Timeout Whisper")); });
       req.write(formBuffer);
       req.end();
     });
 
-    console.log("Respuesta Whisper:", JSON.stringify(result));
+    console.log("Transcripcion Whisper:", result.text || "(sin texto)");
     return result.text || null;
   } catch (e) {
     console.error("Error transcribiendo audio:", e.message);
