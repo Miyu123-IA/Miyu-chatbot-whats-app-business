@@ -168,25 +168,55 @@ async function enviarMensaje(telefono, mensaje) {
   }
 }
 
-async function transcribirAudio(audioUrl) {
+async function transcribirAudio(audioBuffer) {
   if (!OPENAI_API_KEY) return null;
   try {
-    const audioResp = await fetch(audioUrl, {
-      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` }
-    });
-    const audioBuffer = await audioResp.arrayBuffer();
     const FormData = require("form-data");
+    const https = require("https");
+
     const form = new FormData();
-    form.append("file", Buffer.from(audioBuffer), { filename: "audio.ogg", contentType: "audio/ogg" });
+    form.append("file", Buffer.from(audioBuffer), {
+      filename: "audio.ogg",
+      contentType: "audio/ogg",
+      knownLength: audioBuffer.byteLength
+    });
     form.append("model", "whisper-1");
     form.append("language", "es");
-    const resp = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, ...form.getHeaders() },
-      body: form
+
+    // Serializar el form a buffer para enviarlo con https nativo
+    const formBuffer = await new Promise((resolve, reject) => {
+      const chunks = [];
+      form.on("data", chunk => chunks.push(chunk));
+      form.on("end", () => resolve(Buffer.concat(chunks)));
+      form.on("error", reject);
     });
-    const data = await resp.json();
-    return data.text || null;
+
+    const result = await new Promise((resolve, reject) => {
+      const options = {
+        hostname: "api.openai.com",
+        path: "/v1/audio/transcriptions",
+        method: "POST",
+        headers: {
+          ...form.getHeaders(),
+          "Authorization": `Bearer ${OPENAI_API_KEY}`,
+          "Content-Length": formBuffer.length
+        }
+      };
+      const req = https.request(options, res => {
+        let data = "";
+        res.on("data", chunk => data += chunk);
+        res.on("end", () => {
+          try { resolve(JSON.parse(data)); }
+          catch (e) { reject(new Error("JSON invalido: " + data)); }
+        });
+      });
+      req.on("error", reject);
+      req.write(formBuffer);
+      req.end();
+    });
+
+    console.log("Respuesta Whisper:", JSON.stringify(result));
+    return result.text || null;
   } catch (e) {
     console.error("Error transcribiendo audio:", e.message);
     return null;
@@ -399,27 +429,14 @@ app.post("/webhook", async (req, res) => {
           const audioBuffer = await audioResp.arrayBuffer();
           console.log(`🎤 Audio descargado, tamaño: ${audioBuffer.byteLength} bytes`);
 
-          // Paso 3: transcribir con Whisper
-          const FormData = require("form-data");
-          const form = new FormData();
-          form.append("file", Buffer.from(audioBuffer), { filename: "audio.ogg", contentType: "audio/ogg" });
-          form.append("model", "whisper-1");
-          form.append("language", "es");
-
+          // Paso 3: transcribir con Whisper usando la función dedicada
           console.log(`🎤 Enviando a Whisper...`);
-          const whisperResp = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, ...form.getHeaders() },
-            body: form
-          });
-          const whisperData = await whisperResp.json();
-          console.log(`🎤 Respuesta Whisper:`, JSON.stringify(whisperData));
+          const transcripcion = await transcribirAudio(audioBuffer);
 
-          if (whisperData.text) {
-            console.log(`🎤 Transcripción exitosa: ${whisperData.text}`);
-            textoParaClaude = `[El cliente mandó un audio. Transcripción: "${whisperData.text}"]`;
+          if (transcripcion) {
+            console.log(`🎤 Transcripcion exitosa: ${transcripcion}`);
+            textoParaClaude = `[El cliente mando un audio. Transcripcion: "${transcripcion}"]`;
           } else {
-            console.error("🎤 Whisper no devolvió texto:", whisperData);
             await enviarMensaje(telefono, "No pude entender bien el audio 😅 ¿Me lo puedes escribir?");
             return;
           }
