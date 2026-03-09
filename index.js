@@ -171,55 +171,70 @@ async function enviarMensaje(telefono, mensaje) {
 async function transcribirAudio(audioBuffer) {
   if (!OPENAI_API_KEY) return null;
   try {
-    const FormData = require("form-data");
     const https = require("https");
+    const buf = Buffer.from(audioBuffer);
 
-    const form = new FormData();
-    form.append("file", Buffer.from(audioBuffer), {
-      filename: "audio.ogg",
-      contentType: "audio/ogg",
-      knownLength: audioBuffer.byteLength
-    });
-    form.append("model", "whisper-1");
-    form.append("language", "es");
+    // Construir multipart/form-data manualmente sin dependencias
+    const boundary = "----MiyuBoundary" + Date.now();
+    const CRLF = "
+";
 
-    // Usar getBuffer() que es síncrono y confiable
-    const formBuffer = form.getBuffer();
-    const formHeaders = form.getHeaders();
+    const partHeader = Buffer.from(
+      "--" + boundary + CRLF +
+      'Content-Disposition: form-data; name="file"; filename="audio.ogg"' + CRLF +
+      "Content-Type: audio/ogg" + CRLF + CRLF
+    );
+    const modelPart = Buffer.from(
+      CRLF + "--" + boundary + CRLF +
+      'Content-Disposition: form-data; name="model"' + CRLF + CRLF +
+      "whisper-1" + CRLF
+    );
+    const langPart = Buffer.from(
+      "--" + boundary + CRLF +
+      'Content-Disposition: form-data; name="language"' + CRLF + CRLF +
+      "es" + CRLF
+    );
+    const closingBoundary = Buffer.from("--" + boundary + "--" + CRLF);
 
-    console.log("Enviando a Whisper, buffer size:", formBuffer.length);
+    const body = Buffer.concat([partHeader, buf, modelPart, langPart, closingBoundary]);
+
+    console.log("Whisper body size:", body.length, "bytes");
 
     const result = await new Promise((resolve, reject) => {
-      const options = {
+      const req = https.request({
         hostname: "api.openai.com",
         path: "/v1/audio/transcriptions",
         method: "POST",
         timeout: 30000,
         headers: {
-          ...formHeaders,
-          "Authorization": `Bearer ${OPENAI_API_KEY}`,
-          "Content-Length": formBuffer.length
+          "Authorization": "Bearer " + OPENAI_API_KEY,
+          "Content-Type": "multipart/form-data; boundary=" + boundary,
+          "Content-Length": body.length
         }
-      };
-      const req = https.request(options, res => {
+      }, (res) => {
         let data = "";
         res.on("data", chunk => { data += chunk; });
         res.on("end", () => {
-          console.log("Respuesta Whisper raw:", data.substring(0, 200));
+          console.log("Whisper status:", res.statusCode, "respuesta:", data.substring(0, 300));
           try { resolve(JSON.parse(data)); }
-          catch (e) { reject(new Error("JSON invalido: " + data.substring(0, 100))); }
+          catch(e) { reject(new Error("JSON invalido: " + data.substring(0, 100))); }
         });
       });
-      req.on("error", (e) => { console.error("Error https:", e.message); reject(e); });
-      req.on("timeout", () => { req.destroy(); reject(new Error("Timeout Whisper")); });
-      req.write(formBuffer);
+      req.on("error", e => { console.error("Whisper error:", e.message); reject(e); });
+      req.on("timeout", () => { req.destroy(); reject(new Error("Timeout Whisper 30s")); });
+      req.write(body);
       req.end();
     });
 
-    console.log("Transcripcion Whisper:", result.text || "(sin texto)");
-    return result.text || null;
+    if (result.text) {
+      console.log("Transcripcion exitosa:", result.text);
+      return result.text;
+    } else {
+      console.error("Whisper sin texto:", JSON.stringify(result));
+      return null;
+    }
   } catch (e) {
-    console.error("Error transcribiendo audio:", e.message);
+    console.error("Error en transcribirAudio:", e.message);
     return null;
   }
 }
