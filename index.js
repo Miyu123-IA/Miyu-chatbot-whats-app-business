@@ -176,8 +176,7 @@ async function transcribirAudio(audioBuffer) {
 
     // Construir multipart/form-data manualmente sin dependencias
     const boundary = "----MiyuBoundary" + Date.now();
-    const CRLF = "
-";
+    const CRLF = "\r\n";
 
     const partHeader = Buffer.from(
       "--" + boundary + CRLF +
