@@ -364,22 +364,72 @@ app.post("/webhook", async (req, res) => {
 
     // AUDIO
     if (tipo === "audio") {
-      if (OPENAI_API_KEY && mensaje.audio?.id) {
-        await sleep(delayHumano());
-        await enviarMensaje(telefono, "Dame un momento, escucho tu audio 🎤");
-        const mediaResp = await fetch(`https://graph.facebook.com/v18.0/${mensaje.audio.id}`, {
-          headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` }
-        });
-        const mediaData = await mediaResp.json();
-        const transcripcion = await transcribirAudio(mediaData.url);
-        if (transcripcion) {
-          console.log(`🎤 Transcripción: ${transcripcion}`);
-          textoParaClaude = `[El cliente mandó un audio. Transcripción: "${transcripcion}"]`;
-        } else {
-          await enviarMensaje(telefono, "No pude escuchar bien ese audio 😅 ¿Me lo puedes escribir?");
+      const audioId = mensaje.audio?.id;
+      console.log(`🎤 Audio ID: ${audioId}, OpenAI Key presente: ${!!OPENAI_API_KEY}`);
+      if (OPENAI_API_KEY && audioId) {
+        try {
+          await enviarMensaje(telefono, "Dame un momento, escucho tu audio 🎤");
+
+          // Paso 1: obtener URL del audio desde Meta
+          console.log(`🎤 Obteniendo URL de Meta para audio ${audioId}...`);
+          const mediaResp = await fetch(`https://graph.facebook.com/v18.0/${audioId}`, {
+            headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` }
+          });
+          const mediaData = await mediaResp.json();
+          console.log(`🎤 Respuesta Meta:`, JSON.stringify(mediaData));
+
+          if (!mediaData.url) {
+            console.error("🎤 No se obtuvo URL del audio:", mediaData);
+            await enviarMensaje(telefono, "No pude obtener el audio 😅 ¿Me lo puedes escribir?");
+            return;
+          }
+
+          // Paso 2: descargar el audio con el token
+          console.log(`🎤 Descargando audio de: ${mediaData.url}`);
+          const audioResp = await fetch(mediaData.url, {
+            headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` }
+          });
+
+          if (!audioResp.ok) {
+            console.error(`🎤 Error descargando audio: ${audioResp.status} ${audioResp.statusText}`);
+            await enviarMensaje(telefono, "No pude descargar el audio 😅 ¿Me lo puedes escribir?");
+            return;
+          }
+
+          const audioBuffer = await audioResp.arrayBuffer();
+          console.log(`🎤 Audio descargado, tamaño: ${audioBuffer.byteLength} bytes`);
+
+          // Paso 3: transcribir con Whisper
+          const FormData = require("form-data");
+          const form = new FormData();
+          form.append("file", Buffer.from(audioBuffer), { filename: "audio.ogg", contentType: "audio/ogg" });
+          form.append("model", "whisper-1");
+          form.append("language", "es");
+
+          console.log(`🎤 Enviando a Whisper...`);
+          const whisperResp = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, ...form.getHeaders() },
+            body: form
+          });
+          const whisperData = await whisperResp.json();
+          console.log(`🎤 Respuesta Whisper:`, JSON.stringify(whisperData));
+
+          if (whisperData.text) {
+            console.log(`🎤 Transcripción exitosa: ${whisperData.text}`);
+            textoParaClaude = `[El cliente mandó un audio. Transcripción: "${whisperData.text}"]`;
+          } else {
+            console.error("🎤 Whisper no devolvió texto:", whisperData);
+            await enviarMensaje(telefono, "No pude entender bien el audio 😅 ¿Me lo puedes escribir?");
+            return;
+          }
+        } catch (audioError) {
+          console.error("🎤 Error completo procesando audio:", audioError.message, audioError.stack);
+          await enviarMensaje(telefono, "Tuve un problema con el audio 😅 ¿Me lo puedes escribir?");
           return;
         }
       } else {
+        console.log(`🎤 Sin OpenAI key o sin audioId. Key: ${!!OPENAI_API_KEY}, ID: ${audioId}`);
         await enviarMensaje(telefono, "No pude escuchar ese audio desde aquí 😅 ¿Me lo puedes escribir?");
         return;
       }
