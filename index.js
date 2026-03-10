@@ -616,20 +616,20 @@ app.post("/admin/enviar", async (req, res) => {
   const { telefono, mensaje } = req.body;
   try {
     await enviarMensaje(telefono, `[Agente humano]: ${mensaje}`);
-    if (historial[telefono]) {
-      historial[telefono].push({ role: "assistant", content: `[Agente humano]: ${mensaje}` });
+    if (conversaciones[telefono]) {
+      conversaciones[telefono].push({ role: "assistant", content: `[Agente humano]: ${mensaje}` });
     }
     res.json({ ok: true });
   } catch(e) { res.json({ ok: false, error: e.message }); }
 });
 
 app.get("/admin/chats", (req, res) => {
-  const result = Object.entries(historial).map(([tel, msgs]) => ({
+  const result = Object.entries(conversaciones).map(([tel, msgs]) => ({
     telefono: tel,
     mensajes: msgs,
     pausado: modoPausa[tel] || false,
     perfil: perfilesClientes[tel] || {},
-    carrito: carritoAbandono[tel]?.productos || null,
+    carrito: carritosAbandonados[tel]?.productos || null,
   }));
   res.json(result);
 });
