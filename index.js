@@ -598,14 +598,945 @@ const modoPausa = {};
 const path = require("path");
 const fs = require("fs");
 
-// Servir dashboard
-app.get("/admin", (req, res) => {
-  const dashPath = path.join(__dirname, "dashboard.html");
-  if (fs.existsSync(dashPath)) {
-    res.sendFile(dashPath);
-  } else {
-    res.send("<h1>Dashboard no encontrado. Sube dashboard.html al repo.</h1>");
+// Servir dashboard (incrustado directamente)
+const DASHBOARD_HTML = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MIYU Beauty — Panel de Control</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0a0e;
+    --surface: #16111a;
+    --surface2: #1f1825;
+    --border: #2d2335;
+    --accent: #e8a0bf;
+    --accent2: #c97ab2;
+    --green: #7ec8a0;
+    --red: #e88080;
+    --yellow: #e8d080;
+    --text: #f0e8f5;
+    --muted: #8a7a95;
+    --online: #7ec8a0;
   }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* HEADER */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo {
+    font-family: 'DM Serif Display', serif;
+    font-size: 22px;
+    color: var(--accent);
+    letter-spacing: 0.02em;
+  }
+  .logo span { font-style: italic; color: var(--muted); font-size: 14px; margin-left: 8px; }
+  .header-stats {
+    display: flex;
+    gap: 24px;
+  }
+  .stat {
+    text-align: center;
+  }
+  .stat-num {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .stat-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .status-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 100px;
+    background: rgba(126, 200, 160, 0.1);
+    border: 1px solid rgba(126, 200, 160, 0.3);
+    font-size: 13px;
+    color: var(--green);
+  }
+  .pulse {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+
+  /* LAYOUT */
+  .main {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    height: calc(100vh - 73px);
+  }
+
+  /* SIDEBAR - LISTA DE CHATS */
+  .sidebar {
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    background: var(--surface);
+  }
+  .sidebar-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .sidebar-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .filter-tabs {
+    display: flex;
+    gap: 4px;
+  }
+  .filter-tab {
+    padding: 4px 10px;
+    border-radius: 100px;
+    font-size: 11px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    background: transparent;
+    transition: all 0.2s;
+  }
+  .filter-tab.active {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+  }
+
+  .chat-item {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.15s;
+    position: relative;
+  }
+  .chat-item:hover { background: var(--surface2); }
+  .chat-item.active { background: var(--surface2); border-left: 2px solid var(--accent); }
+  .chat-item.paused { border-left: 2px solid var(--yellow); }
+
+  .chat-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 4px;
+  }
+  .chat-name {
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--text);
+  }
+  .chat-time {
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .chat-preview {
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 240px;
+  }
+  .chat-tags {
+    display: flex;
+    gap: 4px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+  .tag {
+    padding: 2px 8px;
+    border-radius: 100px;
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .tag-bot { background: rgba(232, 160, 191, 0.15); color: var(--accent); }
+  .tag-human { background: rgba(232, 208, 128, 0.15); color: var(--yellow); }
+  .tag-vip { background: rgba(201, 122, 178, 0.2); color: var(--accent2); }
+  .tag-nuevo { background: rgba(126, 200, 160, 0.15); color: var(--green); }
+  .tag-frecuente { background: rgba(126, 160, 200, 0.15); color: #80b0e8; }
+  .unread-dot {
+    width: 8px; height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    position: absolute;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  /* PANEL PRINCIPAL */
+  .chat-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .chat-panel-header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--surface);
+  }
+  .client-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .avatar {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'DM Serif Display', serif;
+    font-size: 16px;
+    color: var(--bg);
+  }
+  .client-name { font-weight: 500; font-size: 15px; }
+  .client-phone { font-size: 12px; color: var(--muted); }
+  .client-meta {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  /* BOTONES DE CONTROL */
+  .control-buttons {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .btn {
+    padding: 9px 18px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+    font-family: 'DM Sans', sans-serif;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn-take {
+    background: var(--yellow);
+    color: #1a1500;
+  }
+  .btn-take:hover { background: #f0da8a; transform: translateY(-1px); }
+  .btn-release {
+    background: var(--green);
+    color: #0a1f12;
+  }
+  .btn-release:hover { background: #90d8b0; transform: translateY(-1px); }
+  .btn-mp {
+    background: rgba(30, 167, 253, 0.15);
+    color: #4fc3f7;
+    border: 1px solid rgba(30, 167, 253, 0.3);
+  }
+  .btn-mp:hover { background: rgba(30, 167, 253, 0.25); }
+  .btn-outline {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* MENSAJES */
+  .messages-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .message {
+    max-width: 65%;
+    animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .message.bot { align-self: flex-start; }
+  .message.user { align-self: flex-end; }
+  .message.human-agent { align-self: flex-start; }
+
+  .msg-bubble {
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 13.5px;
+    line-height: 1.5;
+  }
+  .message.bot .msg-bubble {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-bottom-left-radius: 4px;
+  }
+  .message.user .msg-bubble {
+    background: rgba(232, 160, 191, 0.15);
+    border: 1px solid rgba(232, 160, 191, 0.2);
+    border-bottom-right-radius: 4px;
+  }
+  .message.human-agent .msg-bubble {
+    background: rgba(232, 208, 128, 0.12);
+    border: 1px solid rgba(232, 208, 128, 0.25);
+    border-bottom-left-radius: 4px;
+  }
+  .msg-meta {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .message.user .msg-meta { justify-content: flex-end; }
+  .msg-sender {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+    color: var(--muted);
+  }
+  .message.bot .msg-sender { color: var(--accent); }
+  .message.human-agent .msg-sender { color: var(--yellow); }
+
+  /* INPUT AREA */
+  .input-area {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .mode-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .mode-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+  }
+  .mode-dot.bot { background: var(--accent); }
+  .mode-dot.human { background: var(--yellow); }
+
+  .input-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+  }
+  .msg-input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13.5px;
+    resize: none;
+    min-height: 42px;
+    max-height: 120px;
+    transition: border-color 0.2s;
+  }
+  .msg-input:focus { outline: none; border-color: var(--accent); }
+  .msg-input::placeholder { color: var(--muted); }
+  .send-btn {
+    width: 42px; height: 42px;
+    border-radius: 10px;
+    background: var(--accent);
+    border: none;
+    color: var(--bg);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    font-size: 18px;
+  }
+  .send-btn:hover { background: var(--accent2); transform: scale(1.05); }
+
+  /* PANEL LATERAL DERECHO - PERFIL */
+  .profile-panel {
+    width: 260px;
+    border-left: 1px solid var(--border);
+    background: var(--surface);
+    overflow-y: auto;
+    padding: 20px;
+    flex-shrink: 0;
+  }
+  .profile-section {
+    margin-bottom: 20px;
+  }
+  .profile-section-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .profile-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 13px;
+  }
+  .profile-key { color: var(--muted); }
+  .profile-val { color: var(--text); font-weight: 500; text-align: right; max-width: 130px; }
+
+  /* STOCK PANEL */
+  .stock-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .stock-item:last-child { border-bottom: none; }
+  .stock-name { color: var(--muted); max-width: 130px; }
+  .stock-badge {
+    padding: 2px 8px;
+    border-radius: 100px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .stock-ok { background: rgba(126, 200, 160, 0.2); color: var(--green); }
+  .stock-low { background: rgba(232, 208, 128, 0.2); color: var(--yellow); }
+  .stock-out { background: rgba(232, 128, 128, 0.2); color: var(--red); }
+
+  /* TOAST */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    padding: 12px 20px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    z-index: 1000;
+    animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .toast-success { background: var(--green); color: #0a1f12; }
+  .toast-warning { background: var(--yellow); color: #1a1500; }
+  @keyframes slideIn {
+    from { transform: translateX(100px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+  @keyframes fadeOut {
+    to { opacity: 0; transform: translateX(100px); }
+  }
+
+  /* EMPTY STATE */
+  .empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    gap: 12px;
+  }
+  .empty-icon { font-size: 48px; opacity: 0.3; }
+  .empty-text { font-family: 'DM Serif Display', serif; font-size: 18px; color: var(--muted); }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .chat-panel-inner {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+  .chat-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .divider-date {
+    text-align: center;
+    font-size: 11px;
+    color: var(--muted);
+    padding: 8px 0;
+    position: relative;
+  }
+  .divider-date::before {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; top: 50%;
+    height: 1px;
+    background: var(--border);
+    z-index: 0;
+  }
+  .divider-date span {
+    background: var(--bg);
+    padding: 0 12px;
+    position: relative;
+    z-index: 1;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">MIYU Beauty <span>Panel de Operaciones</span></div>
+  <div class="header-stats">
+    <div class="stat">
+      <div class="stat-num" id="stat-activos">0</div>
+      <div class="stat-label">Chats Activos</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num" id="stat-humano">0</div>
+      <div class="stat-label">En Control</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num" id="stat-hoy">0</div>
+      <div class="stat-label">Ventas Hoy</div>
+    </div>
+  </div>
+  <div class="status-pill">
+    <div class="pulse"></div>
+    Bot Online
+  </div>
+</header>
+
+<div class="main">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-title">Conversaciones</div>
+      <div class="filter-tabs">
+        <button class="filter-tab active" onclick="filtrar('todos')">Todos</button>
+        <button class="filter-tab" onclick="filtrar('humano')">⚡ Humano</button>
+        <button class="filter-tab" onclick="filtrar('bot')">🤖 Bot</button>
+      </div>
+    </div>
+    <div id="chat-list"></div>
+  </div>
+
+  <!-- PANEL PRINCIPAL -->
+  <div class="chat-panel" id="chat-panel">
+    <div class="empty-state">
+      <div class="empty-icon">🌸</div>
+      <div class="empty-text">Selecciona una conversación</div>
+      <div style="font-size:13px; color: var(--muted)">para ver el chat y tomar control</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// CONFIGURACIÓN — cambiar por tu Railway URL
+// ============================================================
+const API_BASE = window.location.origin;
+
+// ============================================================
+// DATOS DEMO (reemplaza con fetch real al backend)
+// ============================================================
+const clientesDemo = [
+  {
+    id: "5216691108333",
+    nombre: "Julio Torres",
+    telefono: "+52 669 110 8333",
+    tipo: "frecuente",
+    modoBot: true,
+    ultimoMensaje: "Qué tono me recomiendas para piel morena?",
+    hora: "hace 2 min",
+    noLeidos: 2,
+    perfil: {
+      tipoPiel: "Mixta",
+      tono: "NC42",
+      compras: 3,
+      totalGastado: "$1,850 MXN",
+      ultimaCompra: "Set Anua"
+    },
+    mensajes: [
+      { tipo: "bot", texto: "¡Hola! Soy Miyu de MIYU Beauty 🌸 ¿En qué te puedo ayudar hoy?", hora: "9:01 pm" },
+      { tipo: "user", texto: "Hola! busco algo para manchas y poros", hora: "9:02 pm" },
+      { tipo: "bot", texto: "¡Qué bueno que nos escribiste! Para manchas y poros tengo dos opciones increíbles:\\n\\n• Medicube Kojic Acid Serum → $695 MXN (aclara manchas, controla grasa)\\n• Set Anua 3 pasos → $720 MXN (toner + serum + crema, el combo completo)\\n\\n¿Cuál te llama más la atención?", hora: "9:02 pm" },
+      { tipo: "user", texto: "Qué tono me recomiendas para piel morena?", hora: "9:04 pm" }
+    ]
+  },
+  {
+    id: "5216699001234",
+    nombre: "Ana Beltrán",
+    telefono: "+52 669 900 1234",
+    tipo: "nuevo",
+    modoBot: false,
+    ultimoMensaje: "Cuánto cuesta el envío a CDMX?",
+    hora: "hace 8 min",
+    noLeidos: 0,
+    perfil: {
+      tipoPiel: "Seca",
+      tono: "NC20",
+      compras: 0,
+      totalGastado: "$0",
+      ultimaCompra: "—"
+    },
+    mensajes: [
+      { tipo: "bot", texto: "¡Hola! Soy Miyu de MIYU Beauty 🌸 ¿Qué buscas hoy?", hora: "8:55 pm" },
+      { tipo: "user", texto: "Vi sus productos en Instagram", hora: "8:56 pm" },
+      { tipo: "human-agent", texto: "¡Hola Ana! Soy Guadalupe, ¿te puedo ayudar a encontrar algo especial? 😊", hora: "8:57 pm" },
+      { tipo: "user", texto: "Cuánto cuesta el envío a CDMX?", hora: "8:58 pm" }
+    ]
+  },
+  {
+    id: "5216691555888",
+    nombre: "Karla Reyes",
+    telefono: "+52 669 155 5888",
+    tipo: "vip",
+    modoBot: true,
+    ultimoMensaje: "Perfecto, hago la transferencia ahorita",
+    hora: "hace 15 min",
+    noLeidos: 0,
+    perfil: {
+      tipoPiel: "Grasa",
+      tono: "NC30",
+      compras: 7,
+      totalGastado: "$4,200 MXN",
+      ultimaCompra: "Tirtir Cushion"
+    },
+    mensajes: [
+      { tipo: "user", texto: "Hola! ya llegó mi pedido anterior?", hora: "8:45 pm" },
+      { tipo: "bot", texto: "¡Hola Karla! Qué gusto verte de nuevo 🌸 Déjame revisar tu pedido...", hora: "8:45 pm" },
+      { tipo: "bot", texto: "Tu pedido fue enviado ayer por la tarde, debería llegarte mañana. ¿Necesitas el número de guía?", hora: "8:46 pm" },
+      { tipo: "user", texto: "No, gracias. También quiero el Medicube PDRN", hora: "8:47 pm" },
+      { tipo: "bot", texto: "¡Perfecto! El Medicube PDRN Pink Peptide Serum está en $695 MXN. ¿Lo agrego a tu pedido?", hora: "8:48 pm" },
+      { tipo: "user", texto: "Perfecto, hago la transferencia ahorita", hora: "8:50 pm" }
+    ]
+  }
+];
+
+const stockDemo = [
+  { nombre: "Tirtir Cushion", cantidad: 8, estado: "ok" },
+  { nombre: "Set Anua", cantidad: 3, estado: "low" },
+  { nombre: "Beauty of Joseon Sun", cantidad: 12, estado: "ok" },
+  { nombre: "Medicube PDRN", cantidad: 1, estado: "low" },
+  { nombre: "Medicube Kojic", cantidad: 0, estado: "out" },
+  { nombre: "Dynasty Cream", cantidad: 5, estado: "ok" },
+  { nombre: "CER-100", cantidad: 6, estado: "ok" },
+  { nombre: "Parches Ojos BOJ", cantidad: 4, estado: "low" }
+];
+
+// ============================================================
+// ESTADO
+// ============================================================
+let clienteActivo = null;
+let filtroActivo = "todos";
+
+// ============================================================
+// RENDER LISTA DE CHATS
+// ============================================================
+function renderLista() {
+  const lista = document.getElementById("chat-list");
+  const filtrados = clientesDemo.filter(c => {
+    if (filtroActivo === "humano") return !c.modoBot;
+    if (filtroActivo === "bot") return c.modoBot;
+    return true;
+  });
+
+  lista.innerHTML = filtrados.map(c => \`
+    <div class="chat-item \${c.id === clienteActivo?.id ? 'active' : ''} \${!c.modoBot ? 'paused' : ''}"
+         onclick="seleccionarChat('\${c.id}')">
+      <div class="chat-top">
+        <div class="chat-name">\${c.nombre}</div>
+        <div class="chat-time">\${c.hora}</div>
+      </div>
+      <div class="chat-preview">\${c.ultimoMensaje}</div>
+      <div class="chat-tags">
+        <span class="tag \${!c.modoBot ? 'tag-human' : 'tag-bot'}">\${!c.modoBot ? '⚡ Humano' : '🤖 Bot'}</span>
+        <span class="tag tag-\${c.tipo}">\${c.tipo.toUpperCase()}</span>
+      </div>
+      \${c.noLeidos > 0 ? '<div class="unread-dot"></div>' : ''}
+    </div>
+  \`).join("");
+
+  // Actualizar stats
+  document.getElementById("stat-activos").textContent = clientesDemo.length;
+  document.getElementById("stat-humano").textContent = clientesDemo.filter(c => !c.modoBot).length;
+}
+
+// ============================================================
+// SELECCIONAR CHAT
+// ============================================================
+function seleccionarChat(id) {
+  clienteActivo = clientesDemo.find(c => c.id === id);
+  clienteActivo.noLeidos = 0;
+  renderLista();
+  renderPanel();
+}
+
+// ============================================================
+// RENDER PANEL PRINCIPAL
+// ============================================================
+function renderPanel() {
+  if (!clienteActivo) return;
+  const c = clienteActivo;
+  const esBot = c.modoBot;
+
+  document.getElementById("chat-panel").innerHTML = \`
+    <div class="chat-panel-header">
+      <div class="client-info">
+        <div class="avatar">\${c.nombre.charAt(0)}</div>
+        <div>
+          <div class="client-name">\${c.nombre}</div>
+          <div class="client-phone">\${c.telefono}</div>
+          <div class="client-meta">
+            <span class="tag tag-\${c.tipo}">\${c.tipo.toUpperCase()}</span>
+            <span class="tag \${esBot ? 'tag-bot' : 'tag-human'}">\${esBot ? '🤖 Bot activo' : '⚡ Control humano'}</span>
+          </div>
+        </div>
+      </div>
+      <div class="control-buttons">
+        \${esBot ? \`
+          <button class="btn btn-take" onclick="tomarControl('\${c.id}')">
+            ⚡ Tomar Control
+          </button>
+        \` : \`
+          <button class="btn btn-release" onclick="soltarBot('\${c.id}')">
+            🤖 Soltar al Bot
+          </button>
+        \`}
+        <button class="btn btn-mp" onclick="generarLinkPago('\${c.id}')">
+          💳 Link de Pago
+        </button>
+        <button class="btn btn-outline" onclick="verPerfil()">
+          👤 Perfil
+        </button>
+      </div>
+    </div>
+
+    <div class="chat-panel-inner">
+      <div class="chat-main">
+        <div class="messages-area" id="messages-area">
+          <div class="divider-date"><span>Hoy</span></div>
+          \${c.mensajes.map(m => \`
+            <div class="message \${m.tipo}">
+              <div class="msg-sender">\${m.tipo === 'bot' ? '🌸 Miyu' : m.tipo === 'human-agent' ? '⚡ Tú' : c.nombre}</div>
+              <div class="msg-bubble">\${m.texto.replace(/\\n/g, '<br>')}</div>
+              <div class="msg-meta">\${m.hora}</div>
+            </div>
+          \`).join("")}
+        </div>
+
+        <div class="input-area">
+          <div class="mode-indicator">
+            <div class="mode-dot \${esBot ? 'bot' : 'human'}"></div>
+            \${esBot ? 'El bot está respondiendo automáticamente' : '⚡ Estás en control — el bot está pausado'}
+          </div>
+          <div class="input-row">
+            <textarea class="msg-input" id="msg-input"
+              placeholder="\${esBot ? 'El bot responde automáticamente. Toma control para escribir...' : 'Escribe tu mensaje como Guadalupe...'}"
+              \${esBot ? 'disabled' : ''}
+              onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();enviarMensaje()}"
+            ></textarea>
+            <button class="send-btn" onclick="enviarMensaje()" \${esBot ? 'disabled' : ''}>➤</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="profile-panel">
+        <div class="profile-section">
+          <div class="profile-section-title">Perfil del Cliente</div>
+          <div class="profile-row"><span class="profile-key">Tipo de piel</span><span class="profile-val">\${c.perfil.tipoPiel}</span></div>
+          <div class="profile-row"><span class="profile-key">Tono</span><span class="profile-val">\${c.perfil.tono}</span></div>
+          <div class="profile-row"><span class="profile-key">Compras</span><span class="profile-val">\${c.perfil.compras}</span></div>
+          <div class="profile-row"><span class="profile-key">Total gastado</span><span class="profile-val">\${c.perfil.totalGastado}</span></div>
+          <div class="profile-row"><span class="profile-key">Última compra</span><span class="profile-val">\${c.perfil.ultimaCompra}</span></div>
+        </div>
+
+        <div class="profile-section">
+          <div class="profile-section-title">Stock en tiempo real</div>
+          \${stockDemo.map(s => \`
+            <div class="stock-item">
+              <span class="stock-name">\${s.nombre}</span>
+              <span class="stock-badge stock-\${s.estado}">
+                \${s.estado === 'out' ? 'Agotado' : s.cantidad + ' pzs'}
+              </span>
+            </div>
+          \`).join("")}
+        </div>
+      </div>
+    </div>
+  \`;
+
+  // Scroll al final
+  setTimeout(() => {
+    const area = document.getElementById("messages-area");
+    if (area) area.scrollTop = area.scrollHeight;
+  }, 50);
+}
+
+// ============================================================
+// TOMAR CONTROL
+// ============================================================
+function tomarControl(id) {
+  const c = clientesDemo.find(x => x.id === id);
+  c.modoBot = false;
+
+  // En producción: POST al backend para pausar el bot
+  // fetch(\`\${API_BASE}/admin/pausar\`, { method: 'POST', body: JSON.stringify({ telefono: id }) })
+
+  showToast("⚡ Tomaste control del chat con " + c.nombre, "warning");
+  renderLista();
+  renderPanel();
+}
+
+// ============================================================
+// SOLTAR AL BOT
+// ============================================================
+function soltarBot(id) {
+  const c = clientesDemo.find(x => x.id === id);
+  c.modoBot = true;
+
+  // En producción: POST al backend para reactivar el bot
+  // fetch(\`\${API_BASE}/admin/reactivar\`, { method: 'POST', body: JSON.stringify({ telefono: id }) })
+
+  showToast("🤖 Bot reactivado para " + c.nombre, "success");
+  renderLista();
+  renderPanel();
+}
+
+// ============================================================
+// ENVIAR MENSAJE COMO HUMANO
+// ============================================================
+function enviarMensaje() {
+  const input = document.getElementById("msg-input");
+  if (!input || !input.value.trim() || clienteActivo?.modoBot) return;
+
+  const texto = input.value.trim();
+  clienteActivo.mensajes.push({ tipo: "human-agent", texto, hora: "ahora" });
+  clienteActivo.ultimoMensaje = texto;
+  input.value = "";
+
+  // En producción: POST al backend para enviar vía WhatsApp
+  // fetch(\`\${API_BASE}/admin/enviar\`, {
+  //   method: 'POST',
+  //   headers: { 'Content-Type': 'application/json' },
+  //   body: JSON.stringify({ telefono: clienteActivo.id, mensaje: texto })
+  // })
+
+  showToast("✓ Mensaje enviado", "success");
+  renderPanel();
+}
+
+// ============================================================
+// GENERAR LINK DE PAGO (Mercado Pago)
+// ============================================================
+function generarLinkPago(id) {
+  const monto = prompt("¿Cuánto es el monto del pedido? (MXN)");
+  if (!monto || isNaN(monto)) return;
+
+  // En producción: llamar al backend que llama a Mercado Pago API
+  // fetch(\`\${API_BASE}/admin/link-pago\`, {
+  //   method: 'POST',
+  //   body: JSON.stringify({ telefono: id, monto: parseFloat(monto), descripcion: 'Pedido MIYU Beauty' })
+  // })
+
+  const linkDemo = \`https://mpago.la/miyu-\${Date.now().toString(36)}\`;
+  showToast(\`💳 Link generado: \${linkDemo}\`, "success");
+
+  // Agregar al chat
+  clienteActivo.mensajes.push({
+    tipo: "human-agent",
+    texto: \`💳 Aquí está tu link de pago seguro:\\n\${linkDemo}\\n\\nMonto: $\${monto} MXN\`,
+    hora: "ahora"
+  });
+  renderPanel();
+}
+
+// ============================================================
+// FILTRAR
+// ============================================================
+function filtrar(tipo) {
+  filtroActivo = tipo;
+  document.querySelectorAll(".filter-tab").forEach(t => t.classList.remove("active"));
+  event.target.classList.add("active");
+  renderLista();
+}
+
+// ============================================================
+// TOAST
+// ============================================================
+function showToast(msg, tipo) {
+  const t = document.createElement("div");
+  t.className = \`toast toast-\${tipo}\`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+// ============================================================
+// INIT
+// ============================================================
+renderLista();
+
+// Simular nuevos mensajes cada 15 segundos
+setInterval(() => {
+  const rand = clientesDemo[Math.floor(Math.random() * clientesDemo.length)];
+  if (rand.modoBot) {
+    rand.noLeidos++;
+    rand.hora = "hace 1 min";
+    renderLista();
+  }
+}, 15000);
+</script>
+</body>
+</html>
+`;
+app.get("/admin", (req, res) => {
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(DASHBOARD_HTML);
 });
 
 // Pausar bot para un número
