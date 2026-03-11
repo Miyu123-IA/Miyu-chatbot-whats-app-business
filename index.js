@@ -1805,7 +1805,9 @@ app.post("/admin/reactivar", (req, res) => {
 app.post("/admin/enviar", async (req, res) => {
   const { telefono, mensaje } = req.body;
   try {
-    await enviarMensaje(telefono, `[Agente humano]: ${mensaje}`);
+    // Al cliente le llega el mensaje limpio, sin prefijos
+    await enviarMensaje(telefono, mensaje);
+    // Internamente guardamos el prefijo para que Claude sepa que fue humano
     if (conversaciones[telefono]) {
       conversaciones[telefono].push({ role: "assistant", content: `[Agente humano]: ${mensaje}` });
     }
