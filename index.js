@@ -226,8 +226,9 @@ async function enviarMensaje(telefono, texto) {
     );
     const data = await res.json();
     if (!res.ok) {
-      console.error(`Error WA HTTP ${res.status}`);
-      return { ok: false, error: `WhatsApp API error: ${res.status}` };
+      const errMsg = data?.error?.message || JSON.stringify(data).slice(0, 300);
+      console.error(`Error WA HTTP ${res.status}: ${errMsg}`);
+      return { ok: false, error: `[${res.status}] ${errMsg}` };
     }
     return { ok: true, data };
   } catch (err) {
