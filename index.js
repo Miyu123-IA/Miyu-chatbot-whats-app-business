@@ -1002,7 +1002,10 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a0809">
 <title>MIYU Beauty — Centro de Operaciones</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
@@ -1339,11 +1342,11 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
 .ibar-img-btn {
   display:flex; align-items:center; justify-content:center;
   width:36px; height:36px; border-radius:50%; font-size:16px;
-  background:var(--c-surface2); border:1px solid var(--c-bord);
+  background:var(--c-raised); border:1px solid var(--c-rim);
   flex-shrink:0; transition:background .15s, transform .1s;
   user-select:none;
 }
-.ibar-img-btn:not(.disabled):hover { background:var(--c-surface3); transform:scale(1.08); }
+.ibar-img-btn:not(.disabled):hover { background:var(--c-overlay); transform:scale(1.08); }
 
 /* Empty state */
 .empty {
@@ -1653,6 +1656,176 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
 .t-mint  { background:rgba(109,170,142,.92); color:var(--c-base); }
 @keyframes tIn  { from{transform:translateX(50px);opacity:0} to{transform:none;opacity:1} }
 @keyframes tOut { to{transform:translateX(50px);opacity:0} }
+
+/* Back button — hidden on desktop, shown on mobile */
+.tb-back {
+  display:none; width:36px; height:36px; flex-shrink:0;
+  align-items:center; justify-content:center;
+  border-radius:var(--r-sm); background:var(--c-raised);
+  border:1px solid var(--c-rim); color:var(--c-text2);
+  cursor:pointer; font-size:20px; line-height:1;
+  transition:var(--transition);
+}
+.tb-back:hover { color:var(--c-gold); border-color:rgba(200,171,110,.35); }
+
+/* ═══════════════════════════════════════════════
+   RESPONSIVE — Tablet (≤ 900px)
+═══════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  :root { --rp-w: 240px; --side-w: 270px; }
+}
+
+/* ═══════════════════════════════════════════════
+   RESPONSIVE — Mobile (≤ 768px)
+   iPhone 16 Pro Max = 430 × 932 logical px
+═══════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  :root { --nav-w: 0px; }
+
+  html, body { overflow:hidden; -webkit-text-size-adjust:100%; }
+  * { -webkit-tap-highlight-color:transparent; }
+
+  /* ── Bottom nav bar ── */
+  .nav {
+    position:fixed; bottom:0; left:0; right:0; top:auto;
+    width:100%; height:calc(56px + env(safe-area-inset-bottom));
+    padding:0 4px env(safe-area-inset-bottom);
+    flex-direction:row; border-right:none;
+    border-top:1px solid var(--c-rim);
+    z-index:100; justify-content:space-around; align-items:center;
+  }
+  .nav-logo, .nav-spacer { display:none; }
+  .nav-btn { width:50px; height:50px; font-size:21px; border-radius:var(--r-md); }
+  .nav-btn.on::after {
+    right:auto; top:2px; left:50%; transform:translateX(-50%);
+    width:22px; height:2px; border-radius:0 0 2px 2px;
+  }
+  .nav-avatar { width:34px; height:34px; font-size:13px; }
+
+  /* ── Shell ── */
+  .shell { height:calc(100dvh - 56px - env(safe-area-inset-bottom)); flex-direction:column; }
+  .views { flex:1; height:100%; min-height:0; }
+
+  /* ── Chat view: sliding panels ── */
+  #view-chats { position:relative; overflow:hidden; }
+  .sidebar {
+    position:absolute; inset:0; width:100%; z-index:10;
+    transition:transform .28s cubic-bezier(.4,0,.2,1);
+  }
+  .center {
+    position:absolute; inset:0; width:100%; z-index:9;
+    background:var(--c-base); transform:translateX(100%);
+    transition:transform .28s cubic-bezier(.4,0,.2,1);
+  }
+  #view-chats.chat-open .sidebar { transform:translateX(-100%); }
+  #view-chats.chat-open .center  { transform:translateX(0); }
+
+  /* ── Right panel: bottom sheet ── */
+  .rp {
+    display:flex !important; flex-direction:column !important;
+    position:fixed;
+    bottom:calc(56px + env(safe-area-inset-bottom));
+    left:0; right:0; height:72vh; width:100%;
+    z-index:80; border-left:none;
+    border-top:1px solid var(--c-rim2);
+    border-radius:18px 18px 0 0;
+    transform:translateY(110%);
+    transition:transform .32s cubic-bezier(.4,0,.2,1);
+    box-shadow:0 -12px 48px rgba(0,0,0,.6);
+  }
+  .rp.open { transform:translateY(0); }
+  .rp-handle {
+    width:36px; height:4px; border-radius:2px;
+    background:var(--c-overlay); margin:10px auto 0; flex-shrink:0;
+  }
+
+  /* ── RP Backdrop ── */
+  .rp-backdrop {
+    display:none; position:fixed; inset:0; z-index:79;
+    background:rgba(0,0,0,.45);
+    -webkit-backdrop-filter:blur(3px);
+    backdrop-filter:blur(3px);
+  }
+  .rp-backdrop.on { display:block; }
+
+  /* ── Topbar ── */
+  .tb-back { display:flex !important; }
+  .topbar { padding:0 10px; height:52px; }
+  .tb-left { gap:8px; }
+  .tb-right { gap:5px; }
+  .tb-right .btn-rim  { display:none; }
+  .tb-right .btn-pay  { display:none; }
+  .btn { padding:6px 10px; font-size:10.5px; }
+  .tb-av { width:32px; height:32px; font-size:13px; }
+  .tb-name { font-size:12.5px; }
+  .tb-phone { display:none; }
+
+  /* ── Messages ── */
+  .msgs-wrap { padding:14px 12px; gap:10px; }
+  .msg { max-width:86%; }
+  .bubble { font-size:13.5px; padding:9px 13px; }
+
+  /* ── Input bar ── */
+  .ibar { padding:10px 12px; padding-bottom:calc(10px + env(safe-area-inset-bottom)); }
+  .ibar-input {
+    font-size:16px !important; /* previene zoom en iOS */
+    min-height:44px;
+  }
+  .ibar-send  { width:44px; height:44px; font-size:17px; }
+  .ibar-img-btn { width:44px; height:44px; font-size:18px; }
+
+  /* ── Chat list ── */
+  .sb-head { padding:14px 14px 10px; }
+  .sb-search { font-size:16px !important; /* previene zoom en iOS */ }
+  .chat-row { padding:14px 14px; }
+  .cr-name { font-size:14px; }
+  .cr-preview { max-width:100%; font-size:12.5px; }
+  .cr-time { display:none; }
+
+  /* ── Stats strip: 2×2 grid ── */
+  .stats-strip { flex-wrap:wrap; }
+  .stat-tile {
+    flex:0 0 50%; max-width:50%;
+    border-bottom:1px solid var(--c-rim);
+    padding:14px 14px;
+  }
+  .stat-tile:nth-child(2n)  { border-right:none; }
+  .stat-tile:nth-child(n+3) { border-bottom:none; }
+  .st-n { font-size:26px; }
+
+  /* ── Analytics ── */
+  .an-body, .ped-body, .inv-body { padding:14px 12px; }
+  .an-h1 { font-size:20px; }
+  .an-sub { margin-bottom:18px; }
+  .an-grid { grid-template-columns:1fr; gap:10px; }
+  .an-card.full { grid-column:1; }
+  .fn-lbl { width:75px; font-size:10px; }
+  .fn-track { height:20px; }
+
+  /* ── Tables: horizontal scroll ── */
+  #inv-table-wrap, #ped-table-wrap {
+    overflow-x:auto; -webkit-overflow-scrolling:touch;
+  }
+  .inv-table, .ped-table { min-width:520px; }
+  .inv-table th, .inv-table td,
+  .ped-table th,  .ped-table td { padding:10px 6px; }
+
+  /* ── Auth overlay ── */
+  #token-input, #auth-btn { width:min(88vw, 320px); }
+  .auth-logo { font-size:24px; }
+
+  /* ── Pedidos filter chips: scroll ── */
+  .ped-filters { flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:4px; }
+  .ped-filters .chip { flex-shrink:0; }
+
+  /* ── Toast: above bottom nav ── */
+  .toast {
+    bottom:calc(66px + env(safe-area-inset-bottom));
+    right:12px; left:12px; text-align:center;
+    font-size:13px;
+  }
+  @keyframes tIn { from{transform:translateY(30px);opacity:0} to{transform:none;opacity:1} }
+}
 </style>
 </head>
 <body>
@@ -1715,7 +1888,11 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
       </div>
 
       <!-- Right panel -->
+      <!-- Backdrop for mobile RP bottom sheet -->
+      <div class="rp-backdrop" id="rp-backdrop" onclick="closeRp()"></div>
+
       <aside class="rp" id="rp" style="display:none">
+        <div class="rp-handle"></div>
         <div class="rp-tabs">
           <div class="rp-tab on" onclick="tab('perfil',this)">Perfil</div>
           <div class="rp-tab"    onclick="tab('stock',this)">Stock</div>
@@ -2083,10 +2260,29 @@ function renderList() {
 // ══════════════════════════════════════════════
 //  SELECT CHAT
 // ══════════════════════════════════════════════
+function isMob() { return window.innerWidth <= 768; }
+
+function backToList() {
+  document.getElementById('view-chats')?.classList.remove('chat-open');
+  closeRp();
+}
+
+function closeRp() {
+  const rp = document.getElementById('rp');
+  const bd = document.getElementById('rp-backdrop');
+  if (rp) rp.classList.remove('open');
+  if (bd) bd.classList.remove('on');
+}
+
 function selChat(id) {
   activo = chats.find(c => c.id === id);
-  document.getElementById('rp').style.display = 'flex';
-  document.getElementById('rp').style.flexDirection = 'column';
+  const rp = document.getElementById('rp');
+  rp.style.display = 'flex';
+  rp.style.flexDirection = 'column';
+  if (isMob()) {
+    document.getElementById('view-chats').classList.add('chat-open');
+    closeRp(); // reset sheet when switching chats
+  }
   renderList();
   renderCenter();
   renderRP();
@@ -2105,6 +2301,7 @@ function renderCenter() {
   document.getElementById('center').innerHTML = \`
     <div class="topbar">
       <div class="tb-left">
+        <button class="tb-back" onclick="backToList()" title="Volver">‹</button>
         <div class="tb-av">\${escapeHtml(c.nombre.charAt(0).toUpperCase())}</div>
         <div>
           <div class="tb-name">\${safeNombre}</div>
@@ -2723,6 +2920,11 @@ async function updateOrderStatus(pedidoId, nuevoEstado, sel) {
 }
 
 function view(v) {
+  // On mobile, reset chat open state when switching views
+  if (isMob()) {
+    document.getElementById('view-chats')?.classList.remove('chat-open');
+    closeRp();
+  }
   ['chats','analytics','stock','pedidos'].forEach(x => {
     const viewEl = document.getElementById(\`view-\${x}\`);
     const nbEl   = document.getElementById(\`nb-\${x}\`);
@@ -2744,6 +2946,12 @@ function tab(t,btn) {
   document.querySelectorAll('.rp-tab').forEach(x=>x.classList.remove('on'));
   btn.classList.add('on');
   renderRP();
+  if (isMob()) {
+    const rp = document.getElementById('rp');
+    const bd = document.getElementById('rp-backdrop');
+    if (rp) rp.classList.add('open');
+    if (bd) bd.classList.add('on');
+  }
 }
 function buscar(q) { busq=q; renderList(); }
 function syncStats() {
