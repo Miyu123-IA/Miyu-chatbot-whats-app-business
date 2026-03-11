@@ -1172,7 +1172,12 @@ async function fetchChats() {
     syncStats();
     if (activo) {
       const u = chats.find(x => x.id === activo.id);
-      if (u && u.msgs.length !== activo.msgs.length) { activo = u; renderCenter(); }
+      if (u) {
+        const msgsChanged = u.msgs.length !== activo.msgs.length;
+        const botChanged  = u.bot !== activo.bot;
+        activo = u;
+        if (msgsChanged || botChanged) renderCenter();
+      }
     }
   } catch(e) { console.error('fetchChats error:', e); }
 }
@@ -1506,11 +1511,18 @@ async function releaseBot(id) {
 }
 async function send() {
   const el=document.getElementById('ibar-txt');
-  if (!el||!el.value.trim()||activo?.bot) return;
+  if (!el||!el.value.trim()||!activo) return;
+  if (activo.bot) { toast('⚠ Toma control primero','t-blush'); return; }
   const txt=el.value.trim(); el.value='';
-  await fetch('/admin/enviar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({telefono:activo.id,mensaje:txt})});
-  activo.msgs.push({role:'agent',txt,ts:'ahora'});
-  toast('✓ Mensaje enviado','t-mint'); renderCenter();
+  const tel=activo.id;
+  const r=await fetch('/admin/enviar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({telefono:tel,mensaje:txt})});
+  const d=await r.json();
+  if(d.ok){
+    activo.msgs.push({role:'agent',txt,ts:'ahora'});
+    toast('✓ Mensaje enviado','t-mint'); renderCenter();
+  } else {
+    toast('⚠ Error al enviar: '+(d.error||''),'t-blush');
+  }
 }
 async function genLink(id) {
   const m=prompt('Monto del pedido (MXN):');
