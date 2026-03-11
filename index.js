@@ -138,7 +138,7 @@ async function llamarClaude(telefono, mensajeUsuario) {
         model: "claude-opus-4-5",
         max_tokens: 1024,
         system: SYSTEM_PROMPT,
-        messages: conversaciones[telefono],
+        messages: conversaciones[telefono].map(({ role, content }) => ({ role, content })),
       }),
     });
 
@@ -292,7 +292,7 @@ app.post("/webhook", async (req, res) => {
             model: "claude-opus-4-5",
             max_tokens: 1024,
             system: SYSTEM_PROMPT,
-            messages: conversaciones[telefono],
+            messages: conversaciones[telefono].map(({ role, content }) => ({ role, content })),
           }),
         });
 
