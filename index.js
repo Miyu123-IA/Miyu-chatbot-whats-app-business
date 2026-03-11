@@ -1496,6 +1496,70 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
 .qty-out { color:var(--c-blush-lt) !important; }
 
 /* ─────────────────────────────────────────
+   LEAD SCORE BADGE
+───────────────────────────────────────── */
+.lead-badge {
+  font-size:9px; font-family:'DM Mono',monospace;
+  padding:2px 6px; border-radius:100px; margin-left:3px;
+}
+.lead-frio    { background:rgba(100,130,180,.12); color:#7799cc; }
+.lead-tibio   { background:rgba(200,160,80,.14);  color:#c8a04e; }
+.lead-caliente{ background:rgba(200,100,80,.15);  color:#e07060; }
+.lead-listo   { background:rgba(200,80,80,.2);    color:#e05050;
+                box-shadow:0 0 6px rgba(200,80,80,.3); }
+
+/* ─────────────────────────────────────────
+   PEDIDOS VIEW
+───────────────────────────────────────── */
+.ped-view  { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.ped-body  { flex:1; overflow-y:auto; padding:26px; }
+.ped-table { width:100%; border-collapse:collapse; }
+.ped-table th {
+  font-family:'DM Mono',monospace; font-size:9px;
+  letter-spacing:.18em; text-transform:uppercase; color:var(--c-text3);
+  text-align:left; padding:8px 4px; border-bottom:1px solid var(--c-rim);
+  position:sticky; top:0; background:var(--c-base);
+}
+.ped-table td { font-size:11.5px; color:var(--c-text2); padding:9px 4px; border-bottom:1px solid var(--c-rim); vertical-align:middle; }
+.ped-table tr:hover td { color:var(--c-text); background:var(--c-raised); }
+.ped-id   { font-family:'DM Mono',monospace; font-size:10px; color:var(--c-gold); }
+.ped-total{ font-family:'DM Mono',monospace; color:var(--c-mint); }
+.status-badge {
+  display:inline-block; padding:3px 8px; border-radius:100px;
+  font-size:9px; font-family:'DM Mono',monospace; letter-spacing:.05em;
+}
+.s-pendiente  { background:rgba(200,160,80,.15);  color:#c8a04e; }
+.s-confirmado { background:rgba(109,170,142,.15);  color:var(--c-mint); }
+.s-preparando { background:rgba(100,140,220,.13);  color:#88aaee; }
+.s-enviado    { background:rgba(150,100,220,.13);  color:#bb88ee; }
+.s-entregado  { background:rgba(109,170,142,.25);  color:var(--c-mint); border:1px solid rgba(109,170,142,.3); }
+.s-cancelado  { background:rgba(201,125,142,.12);  color:var(--c-blush-lt); }
+.ped-filters  { display:flex; gap:6px; margin-bottom:18px; flex-wrap:wrap; }
+
+/* Inventario editable */
+.qty-edit {
+  background:var(--c-raised); border:1px solid var(--c-rim2);
+  border-radius:4px; padding:3px 7px; width:60px;
+  color:var(--c-text); font-family:'DM Mono',monospace; font-size:11px;
+  text-align:center; outline:none;
+}
+.qty-edit:focus { border-color:rgba(200,171,110,.5); }
+.save-qty {
+  background:var(--c-gold); color:var(--c-base); border:none;
+  border-radius:4px; padding:3px 8px; font-size:10px; cursor:pointer;
+  font-family:'DM Sans',sans-serif; transition:var(--transition); margin-left:4px;
+}
+.save-qty:hover { background:var(--c-gold-lt); }
+
+/* Cotizador */
+.cot-row  { display:flex; gap:6px; margin-bottom:7px; align-items:center; }
+.cot-sel  { flex:1; background:var(--c-raised); border:1px solid var(--c-rim2); border-radius:4px; padding:6px 8px; color:var(--c-text); font-size:11px; outline:none; }
+.cot-sel:focus { border-color:rgba(200,171,110,.4); }
+.cot-qty  { width:44px; background:var(--c-raised); border:1px solid var(--c-rim2); border-radius:4px; padding:6px; color:var(--c-text); font-size:11px; text-align:center; outline:none; }
+.cot-del  { background:transparent; border:none; color:var(--c-blush-lt); cursor:pointer; font-size:14px; padding:0 4px; }
+.cot-total{ font-family:'DM Mono',monospace; font-size:13px; color:var(--c-gold); text-align:right; margin:8px 0; }
+
+/* ─────────────────────────────────────────
    TOAST
 ───────────────────────────────────────── */
 .toast {
@@ -1531,10 +1595,11 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
   <nav class="nav">
     <div class="nav-logo">MIYU</div>
     <div class="nav-btn on" id="nb-chats"     onclick="view('chats')"     title="Conversaciones">💬</div>
-    <div class="nav-btn"    id="nb-analytics" onclick="view('analytics')" title="Analíticas">📊</div>
+    <div class="nav-btn"    id="nb-pedidos"   onclick="view('pedidos')"   title="Pedidos">🛍️</div>
+    <div class="nav-btn"    id="nb-analytics" onclick="view('analytics')" title="Métricas">📊</div>
     <div class="nav-btn"    id="nb-stock"     onclick="view('stock')"     title="Inventario">📦</div>
     <div class="nav-spacer"></div>
-    <div class="nav-avatar" title="Guadalupe González">G</div>
+    <div class="nav-avatar" title="Miyu Beauty">M</div>
   </nav>
 
   <!-- ══ VIEWS ══ -->
@@ -1582,6 +1647,44 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
       </aside>
 
     </div><!-- /view-chats -->
+
+    <!-- ──────── VIEW: PEDIDOS ──────── -->
+    <div class="view" id="view-pedidos">
+      <div class="ped-view">
+        <div class="stats-strip">
+          <div class="stat-tile">
+            <div class="st-n" id="sp-total" style="color:var(--c-gold)">0</div>
+            <div class="st-l">Pedidos totales</div>
+          </div>
+          <div class="stat-tile">
+            <div class="st-n" id="sp-pendientes" style="color:var(--c-gold)">0</div>
+            <div class="st-l">Pendientes</div>
+          </div>
+          <div class="stat-tile">
+            <div class="st-n" id="sp-ingreso" style="color:var(--c-mint)">$0</div>
+            <div class="st-l">Ingreso confirmado</div>
+          </div>
+          <div class="stat-tile">
+            <div class="st-n" id="sp-hoy" style="color:var(--c-blush-lt)">0</div>
+            <div class="st-l">Pedidos hoy</div>
+          </div>
+        </div>
+        <div class="ped-body">
+          <div class="an-h1">Pedidos</div>
+          <div class="an-sub">Gestión de órdenes · actualización cada 10s</div>
+          <div class="ped-filters" id="ped-filters">
+            <button class="chip on" onclick="filtPed('todos',this)">Todos</button>
+            <button class="chip" onclick="filtPed('pendiente',this)">Pendiente</button>
+            <button class="chip" onclick="filtPed('confirmado',this)">Confirmado</button>
+            <button class="chip" onclick="filtPed('preparando',this)">Preparando</button>
+            <button class="chip" onclick="filtPed('enviado',this)">Enviado</button>
+            <button class="chip" onclick="filtPed('entregado',this)">Entregado</button>
+            <button class="chip" onclick="filtPed('cancelado',this)" style="color:var(--c-blush-lt)">Cancelado</button>
+          </div>
+          <div id="ped-table-wrap"></div>
+        </div>
+      </div>
+    </div><!-- /view-pedidos -->
 
     <!-- ──────── VIEW: ANALYTICS ──────── -->
     <div class="view" id="view-analytics">
@@ -1730,37 +1833,28 @@ async function doLogin() {
 
 function startApp() {
   fetchChats();
+  fetchInventario();
+  fetchPedidos();
+  fetchMetricas();
+  fetchLeads();
   if (pollingInterval) clearInterval(pollingInterval);
   pollingInterval = setInterval(fetchChats, 3000);
+  setInterval(fetchPedidos,    10000);
+  setInterval(fetchMetricas,   30000);
+  setInterval(fetchInventario, 60000);
+  setInterval(fetchLeads,      15000);
 }
 
 // ══════════════════════════════════════════════
 //  STATE
 // ══════════════════════════════════════════════
 let chats = [], activo = null, filtro = 'todos', tabActual = 'perfil', busq = '';
-
-const STOCK = [
-  {n:'Beauty of Joseon Relief Sun',    sku:'BOJ-SUN',  p:550, q:8,  s:'ok'},
-  {n:'Bioré UV Aqua Rich SPF50+',      sku:'BIO-UV',   p:475, q:12, s:'ok'},
-  {n:'Mascarilla Capilar Shiseido',    sku:'SHI-MASK', p:500, q:5,  s:'ok'},
-  {n:'&Honey Aceite Capilar',          sku:'HON-OIL',  p:500, q:3,  s:'low'},
-  {n:'CER-100 Colágeno Hair',          sku:'CER-100',  p:395, q:7,  s:'ok'},
-  {n:'Tirtir Red Cushion',             sku:'TIR-CUSH', p:800, q:4,  s:'low'},
-  {n:'Mascara Heroine Make',           sku:'HER-MAS',  p:450, q:0,  s:'out'},
-  {n:'Removedor Heroine Make',         sku:'HER-REM',  p:450, q:6,  s:'ok'},
-  {n:'Delineador Heroine Make',        sku:'HER-DEL',  p:450, q:2,  s:'low'},
-  {n:'Repuesto Rizador Shiseido',      sku:'SHI-RIZ',  p:79,  q:10, s:'ok'},
-  {n:'Mascarilla de Arroz',            sku:'ARR-MASK', p:550, q:9,  s:'ok'},
-  {n:'Centellian 24 Madeca Cream',     sku:'CEN-24',   p:579, q:5,  s:'ok'},
-  {n:'Dynasty Cream BOJ',              sku:'DYN-CRM',  p:665, q:3,  s:'low'},
-  {n:'Parches Ojos BOJ',               sku:'BOJ-EYE',  p:620, q:0,  s:'out'},
-  {n:'Mixsoon Bean Eye Cream',         sku:'MIX-EYE',  p:625, q:4,  s:'low'},
-  {n:'Medicube PDRN Serum',            sku:'MED-PDR',  p:695, q:6,  s:'ok'},
-  {n:'Medicube Kojic Acid Serum',      sku:'MED-KOJ',  p:695, q:1,  s:'low'},
-  {n:'Set Anua 3 pasos',               sku:'SET-ANU',  p:720, q:5,  s:'ok'},
-  {n:'Mixsoon Glass Skin Kit',         sku:'MIX-KIT',  p:820, q:3,  s:'low'},
-  {n:'Parches Kyusoku Biken (6pz)',    sku:'KYU-PAR',  p:120, q:15, s:'ok'},
-];
+let inventarioData = [];   // loaded from /admin/inventario
+let pedidosData    = [];   // loaded from /admin/pedidos
+let metricasData   = null; // loaded from /admin/metricas
+let leadsData      = [];   // loaded from /admin/leads
+let cotItems       = [];   // cotizador item list
+let filtPedidoActual = 'todos';
 
 // ══════════════════════════════════════════════
 //  DATA FETCHING
@@ -1820,6 +1914,45 @@ async function fetchChats() {
   } catch(e) { console.error('fetchChats error:', e.message); }
 }
 
+async function fetchInventario() {
+  try {
+    const r = await fetch('/admin/inventario', { headers: authHeaders() });
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.ok) inventarioData = d.productos || [];
+  } catch(e) { console.error('fetchInventario:', e.message); }
+}
+
+async function fetchPedidos() {
+  try {
+    const r = await fetch('/admin/pedidos', { headers: authHeaders() });
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.ok) {
+      pedidosData = d.pedidos || [];
+      if (document.getElementById('view-pedidos')?.classList.contains('on')) buildPedidos();
+    }
+  } catch(e) { console.error('fetchPedidos:', e.message); }
+}
+
+async function fetchMetricas() {
+  try {
+    const r = await fetch('/admin/metricas', { headers: authHeaders() });
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.ok) metricasData = d.metricas;
+  } catch(e) { console.error('fetchMetricas:', e.message); }
+}
+
+async function fetchLeads() {
+  try {
+    const r = await fetch('/admin/leads', { headers: authHeaders() });
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.ok) leadsData = d.leads || [];
+  } catch(e) { console.error('fetchLeads:', e.message); }
+}
+
 function classTipo(c) {
   if (c.esVIP) return 'vip';
   if (c.mensajes > 10) return 'frecuente';
@@ -1846,13 +1979,18 @@ function renderList() {
     return;
   }
   // Usar data-id en lugar de onclick con interpolación para evitar XSS
-  el.innerHTML = list.map((c,i) => \`
+  el.innerHTML = list.map((c,i) => {
+    const lead = leadsData.find(l => l.telefono === c.id);
+    const leadBadge = lead && lead.score > 0
+      ? \`<span class="lead-badge lead-\${escapeHtml(lead.etapa||'frio')}">\${lead.score}</span>\`
+      : '';
+    return \`
     <div class="chat-row \${c.id===activo?.id?'sel':''} \${!c.bot?'paused':''}"
          data-id="\${escapeHtml(c.id)}"
          onclick="selChat(this.dataset.id)"
          style="animation-delay:\${i*.04}s">
       <div class="cr-head">
-        <div class="cr-name">\${escapeHtml(c.nombre)}</div>
+        <div class="cr-name">\${escapeHtml(c.nombre)}\${leadBadge}</div>
         <div class="cr-time">activo</div>
       </div>
       <div class="cr-preview">\${escapeHtml(c.preview)}</div>
@@ -1860,7 +1998,8 @@ function renderList() {
         <span class="tag \${!c.bot?'tag-human':'tag-bot'}">\${!c.bot?'⚡ humano':'🤖 bot'}</span>
         <span class="tag tag-\${c.tipo==='nuevo'?'nuevo':c.tipo==='frecuente'?'frec':'vip'}">\${escapeHtml(c.tipo)}</span>
       </div>
-    </div>\`).join('');
+    </div>\`;
+  }).join('');
 }
 
 // ══════════════════════════════════════════════
@@ -1910,7 +2049,7 @@ function renderCenter() {
         ? \`<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--c-text3);font-size:12px">Sin mensajes todavía</div>\`
         : c.msgs.map(m => \`
           <div class="msg \${escapeHtml(m.role)}">
-            <div class="msg-who">\${m.role==='bot'?'✦ MIYU':m.role==='agent'?'⚡ GUADALUPE':safeNombre.toUpperCase()}</div>
+            <div class="msg-who">\${m.role==='bot'?'✦ MIYU':m.role==='agent'?'⚡ AGENTE':safeNombre.toUpperCase()}</div>
             <div class="bubble">\${escapeHtml(m.txt)}</div>
             <div class="msg-ts">\${escapeHtml(m.ts)}</div>
           </div>\`).join('')}
@@ -1967,16 +2106,25 @@ function renderRP() {
       </div>\`;
     drawSpark();
   } else if (tabActual === 'stock') {
+    const stockList = inventarioData.length ? inventarioData : [];
     el.innerHTML = \`
       <div class="rp-section">
         <div class="rp-title">Inventario rápido</div>
-        \${STOCK.slice(0,12).map(s=>\`
-          <div class="stock-row">
-            <span class="sn">\${escapeHtml(s.n)}</span>
-            <span class="sq \${s.s}">\${s.s==='out'?'✕ Agotado':s.q+' pzs'}</span>
-          </div>\`).join('')}
+        \${!stockList.length
+          ? '<div style="font-size:11px;color:var(--c-text3)">Cargando…</div>'
+          : stockList.slice(0,12).map(p=>\`
+            <div class="stock-row">
+              <span class="sn" title="\${escapeHtml(p.nombre)}">\${escapeHtml(p.nombre.length>24?p.nombre.slice(0,22)+'…':p.nombre)}</span>
+              <span class="sq \${p.estado==='agotado'?'out':p.estado==='bajo'?'low':'ok'}">\${p.estado==='agotado'?'✕ Agotado':p.stock+' pzs'}</span>
+            </div>\`).join('')}
       </div>\`;
   } else {
+    cotItems = []; // reset cotizador on each open
+    const invOptions = inventarioData.length
+      ? inventarioData.filter(p=>p.activo!==false).map(p =>
+          \`<option value="\${escapeHtml(p.id)}" data-precio="\${p.precio}">\${escapeHtml(p.nombre)} — $\${p.precio}</option>\`
+        ).join('')
+      : '<option value="">Cargando inventario…</option>';
     el.innerHTML = \`
       <div class="rp-section">
         <div class="rp-title">Acciones rápidas</div>
@@ -1987,11 +2135,99 @@ function renderRP() {
         <button class="action-btn danger" data-id="\${safeId}" onclick="blockTroll(this.dataset.id)">🚫 Bloquear troll</button>
       </div>
       <div class="rp-section">
+        <div class="rp-title">Cotizador</div>
+        <div id="cot-items" style="margin-bottom:6px"><div style="font-size:11px;color:var(--c-text3);padding:4px 0">Sin productos</div></div>
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <select id="cot-prod" style="flex:1;font-size:11px;background:var(--c-surface2);border:1px solid var(--c-bord);border-radius:6px;color:var(--c-text);padding:5px 6px">
+            <option value="">— Seleccionar producto —</option>
+            \${invOptions}
+          </select>
+          <button class="btn btn-gold" style="padding:4px 12px;font-size:12px" onclick="cotAddItem()">+</button>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding-top:6px;border-top:1px solid var(--c-bord)">
+          <span id="cot-total" style="font-size:12px;color:var(--c-gold);font-weight:600">Total: $0</span>
+          <button class="btn btn-mint" style="font-size:11px;padding:5px 12px" data-id="\${safeId}" onclick="sendCotizacion(this.dataset.id)">Enviar cotización</button>
+        </div>
+      </div>
+      <div class="rp-section">
         <div class="rp-title">Nota interna</div>
         <textarea class="note-input" placeholder="Agrega contexto sobre este cliente…"></textarea>
         <button class="btn btn-gold" style="width:100%;justify-content:center" onclick="toast('📝 Nota guardada','t-gold')">Guardar nota</button>
       </div>\`;
   }
+}
+
+// ══════════════════════════════════════════════
+//  COTIZADOR HELPERS
+// ══════════════════════════════════════════════
+function cotAddItem() {
+  const sel = document.getElementById('cot-prod');
+  if (!sel || !sel.value) return;
+  const id   = sel.value;
+  const prod = inventarioData.find(p => p.id === id);
+  if (!prod) return;
+  const existing = cotItems.find(x => x.id === id);
+  if (existing) {
+    existing.qty++;
+  } else {
+    cotItems.push({ id, nombre: prod.nombre, precio: prod.precio, qty: 1 });
+  }
+  sel.value = '';
+  renderCotItems();
+}
+
+function cotRemItem(id) {
+  cotItems = cotItems.filter(x => x.id !== id);
+  renderCotItems();
+}
+
+function cotChangeQty(id, qty) {
+  const item = cotItems.find(x => x.id === id);
+  if (item) item.qty = Math.max(1, parseInt(qty)||1);
+  renderCotItems();
+}
+
+function renderCotItems() {
+  const wrap = document.getElementById('cot-items');
+  if (!wrap) return;
+  const total = cotItems.reduce((a,x) => a + x.precio * x.qty, 0);
+  const totEl = document.getElementById('cot-total');
+  if (totEl) totEl.textContent = 'Total: $' + total.toLocaleString();
+  if (!cotItems.length) {
+    wrap.innerHTML = '<div style="font-size:11px;color:var(--c-text3);padding:4px 0">Sin productos</div>';
+    return;
+  }
+  wrap.innerHTML = cotItems.map(x => \`
+    <div class="cot-row">
+      <span class="cot-sel" title="\${escapeHtml(x.nombre)}">\${escapeHtml(x.nombre.length>22?x.nombre.slice(0,20)+'…':x.nombre)}</span>
+      <input class="cot-qty" type="number" value="\${x.qty}" min="1"
+        data-id="\${escapeHtml(x.id)}" onchange="cotChangeQty(this.dataset.id,this.value)" style="width:38px">
+      <span style="font-size:11px;color:var(--c-gold);min-width:44px;text-align:right">$\${(x.precio*x.qty).toLocaleString()}</span>
+      <button class="cot-del" data-id="\${escapeHtml(x.id)}" onclick="cotRemItem(this.dataset.id)">✕</button>
+    </div>\`).join('');
+}
+
+async function sendCotizacion(tel) {
+  if (!cotItems.length) { toast('⚠ Agrega productos al cotizador','t-blush'); return; }
+  try {
+    const r = await fetch('/admin/cotizacion', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        telefono: tel,
+        items: cotItems.map(x => ({ id: x.id, cantidad: x.qty })),
+        enviar: true
+      })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      cotItems = [];
+      renderCotItems();
+      toast('✓ Cotización enviada al cliente','t-mint');
+    } else {
+      toast('⚠ ' + (d.error||'Error'),'t-blush');
+    }
+  } catch { toast('⚠ Error de conexión','t-blush'); }
 }
 
 // ── Sparkline ──
@@ -2017,11 +2253,12 @@ function drawSpark() {
 // ══════════════════════════════════════════════
 function buildAnalytics() {
   syncStats();
+  const m = metricasData;
   const DAYS = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
-  const wv   = [14, 9, 22, 17, 28, 38, 21];
+  const wv   = [14, 9, 22, 17, 28, 38, 21]; // fallback visual
   const wmax = Math.max(...wv);
-  const total = wv.reduce((a,b)=>a+b,0);
-  document.getElementById('msgs7-total').textContent = total;
+  const total = m ? m.mensajesHoy : wv.reduce((a,b)=>a+b,0);
+  document.getElementById('msgs7-total').textContent = m ? m.totalConversaciones : total;
   document.getElementById('chart-week').innerHTML = wv.map((v,i)=>\`
     <div class="bc-wrap">
       <div class="bc-bar \${v===Math.max(...wv)?'hi':'lo'}" style="height:\${(v/wmax)*90}%">
@@ -2030,40 +2267,64 @@ function buildAnalytics() {
       <div class="bc-lbl">\${DAYS[i]}</div>
     </div>\`).join('');
 
+  // Funnel from real data
+  const totalMsg = m ? m.totalConversaciones : 100;
+  const pedConf  = m ? m.pedidosConfirmados  : 0;
+  const pedTot   = m ? m.totalPedidos        : 0;
+  const hotLeads = leadsData.filter(l => l.score >= 60).length;
+  const fnBase   = Math.max(totalMsg, 1);
   const FN = [
-    {l:'Mensajes recibidos', v:100, c:'var(--c-gold)'},
-    {l:'Mostraron interés',  v:68,  c:'var(--c-gold-lt)'},
-    {l:'Pidieron precio',    v:44,  c:'var(--c-blush)'},
-    {l:'Confirmaron pedido', v:19,  c:'var(--c-mint)'},
+    {l:'Conversaciones totales', v:100,                          n:totalMsg, c:'var(--c-gold)'},
+    {l:'Leads calificados',      v:Math.round((hotLeads/Math.max(totalMsg,1))*100)||12, n:hotLeads, c:'var(--c-gold-lt)'},
+    {l:'Pedidos generados',      v:Math.round((pedTot/fnBase)*100)||8,  n:pedTot,  c:'var(--c-blush)'},
+    {l:'Pedidos confirmados',    v:Math.round((pedConf/fnBase)*100)||4, n:pedConf, c:'var(--c-mint)'},
   ];
   document.getElementById('funnel').innerHTML = FN.map(f=>\`
     <div class="fn">
       <div class="fn-lbl">\${escapeHtml(f.l)}</div>
-      <div class="fn-track"><div class="fn-fill" style="width:\${f.v}%;background:\${f.c}">\${f.v}%</div></div>
-      <div class="fn-n">\${f.v}</div>
+      <div class="fn-track"><div class="fn-fill" style="width:\${f.v}%;background:\${f.c}">\${f.n}</div></div>
+      <div class="fn-n">\${f.n}</div>
     </div>\`).join('');
 
+  // Donut: lead distribution
+  const frio     = leadsData.filter(l=>l.score<25).length||1;
+  const tibio    = leadsData.filter(l=>l.score>=25&&l.score<60).length||1;
+  const caliente = leadsData.filter(l=>l.score>=60&&l.score<85).length||1;
+  const listo    = leadsData.filter(l=>l.score>=85).length||1;
+  const dTotal   = frio+tibio+caliente+listo;
   const DN = [
-    {l:'Nuevas',    v:44, c:'#c8ab6e'},
-    {l:'Frecuentes',v:30, c:'#6daa8e'},
-    {l:'VIP',       v:16, c:'#c97d8e'},
-    {l:'Mayoreo',   v:10, c:'#6688bb'},
+    {l:'❄️ Fríos',     v:Math.round((frio/dTotal)*100),     c:'#6688bb'},
+    {l:'🌡️ Tibios',   v:Math.round((tibio/dTotal)*100),    c:'#c8ab6e'},
+    {l:'♨️ Calientes', v:Math.round((caliente/dTotal)*100), c:'#c97d8e'},
+    {l:'🔥 Listos',    v:Math.round((listo/dTotal)*100),    c:'#6daa8e'},
   ];
   buildDonut(DN);
 
-  const PRODS = [
-    ['Set Anua 3 pasos','52'],
-    ['Tirtir Red Cushion','41'],
-    ['Beauty of Joseon Sun','37'],
-    ['Medicube PDRN Serum','31'],
-    ['Dynasty Cream','25'],
-  ];
-  document.getElementById('prod-tbody').innerHTML = PRODS.map((p,i)=>\`
+  // Top productos from real metricas
+  let PRODS;
+  if (m && m.topProductos && m.topProductos.length) {
+    PRODS = m.topProductos.map(p => [p.nombre || p.id, String(p.menciones)]);
+  } else {
+    PRODS = [
+      ['Set Anua Heartleaf','—'],['Tirtir Red Cushion','—'],
+      ['Beauty of Joseon Sun','—'],['Medicube PDRN Serum','—'],['Dynasty Cream','—'],
+    ];
+  }
+  document.getElementById('prod-tbody').innerHTML = PRODS.slice(0,5).map((p,i)=>\`
     <tr>
       <td class="pt-rank">\${i+1}</td>
       <td>\${escapeHtml(p[0])}</td>
       <td>\${escapeHtml(p[1])}</td>
     </tr>\`).join('');
+
+  // Ingreso stats from real data
+  if (m) {
+    const sEl = id => document.getElementById(id);
+    if (sEl('s-pedidos-tot')) sEl('s-pedidos-tot').textContent = m.totalPedidos;
+    if (sEl('s-ingreso-tot')) sEl('s-ingreso-tot').textContent = '$'+Number(m.ingresoTotal||0).toLocaleString();
+    if (sEl('s-ingreso-hoy')) sEl('s-ingreso-hoy').textContent = '$'+Number(m.ingresoHoy||0).toLocaleString();
+    if (sEl('s-pedidos-hoy')) sEl('s-pedidos-hoy').textContent = m.pedidosHoy;
+  }
 
   const HV = Array.from({length:24},(_,h) => {
     if (h>=10&&h<=13) return 50+Math.random()*50;
@@ -2109,26 +2370,82 @@ function buildDonut(data) {
 //  INVENTORY
 // ══════════════════════════════════════════════
 function buildInventory() {
-  const low = STOCK.filter(s=>s.s==='low').length;
-  const out = STOCK.filter(s=>s.s==='out').length;
+  if (!inventarioData.length) {
+    fetchInventario().then(() => {
+      if (inventarioData.length) buildInventory();
+    });
+    document.getElementById('inv-table-wrap').innerHTML =
+      '<div style="padding:32px;text-align:center;color:var(--c-text3);font-size:12px">Cargando inventario…</div>';
+    return;
+  }
+  const low = inventarioData.filter(p => p.estado === 'bajo').length;
+  const out = inventarioData.filter(p => p.estado === 'agotado').length;
   document.getElementById('s-low').textContent = low;
   document.getElementById('s-out').textContent = out;
   document.getElementById('inv-table-wrap').innerHTML = \`
     <table class="inv-table">
       <thead><tr>
-        <th>Producto</th><th>SKU</th><th>Precio</th><th>Stock</th><th style="text-align:right">Estado</th>
+        <th>Producto</th><th>Categoría</th><th>Precio</th>
+        <th>Stock</th><th>Estado</th><th>Activo</th>
       </tr></thead>
       <tbody>
-        \${STOCK.map(s=>\`
-          <tr>
-            <td>\${escapeHtml(s.n)}</td>
-            <td class="sku">\${escapeHtml(s.sku)}</td>
-            <td>$\${s.p}</td>
-            <td class="qty-\${s.s}">\${s.q}</td>
-            <td style="text-align:right"><span class="tag \${s.s==='ok'?'tag-nuevo':s.s==='low'?'tag-bot':'tag-human'}">\${s.s==='ok'?'OK':s.s==='low'?'BAJO':'AGOTADO'}</span></td>
-          </tr>\`).join('')}
+        \${inventarioData.map(p => {
+          const est = p.estado || 'ok';
+          const tagCls = est==='ok'?'tag-nuevo':est==='bajo'?'tag-bot':'tag-human';
+          const estLabel = est==='ok'?'OK':est==='bajo'?'BAJO':'AGOTADO';
+          return \`<tr>
+            <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="\${escapeHtml(p.nombre)}">\${escapeHtml(p.nombre)}</td>
+            <td style="font-size:10px;color:var(--c-text3)">\${escapeHtml(p.categoria||'')}</td>
+            <td>$\${p.precio}</td>
+            <td>
+              <input class="qty-edit" type="number" value="\${p.stock}" min="0"
+                data-id="\${escapeHtml(p.id)}" style="width:54px">
+              <button class="save-qty" data-id="\${escapeHtml(p.id)}"
+                onclick="saveStock(this.dataset.id)">✓</button>
+            </td>
+            <td><span class="tag \${tagCls}">\${estLabel}</span></td>
+            <td style="text-align:center">
+              <input type="checkbox" \${p.activo?'checked':''} data-id="\${escapeHtml(p.id)}"
+                onchange="toggleActivo(this.dataset.id, this.checked)">
+            </td>
+          </tr>\`;
+        }).join('')}
       </tbody>
     </table>\`;
+}
+
+async function saveStock(id) {
+  const input = document.querySelector(\`.qty-edit[data-id="\${CSS.escape(id)}"]\`);
+  if (!input) return;
+  const nuevoStock = parseInt(input.value);
+  if (isNaN(nuevoStock) || nuevoStock < 0) { toast('⚠ Stock inválido','t-blush'); return; }
+  try {
+    const r = await fetch(\`/admin/inventario/\${encodeURIComponent(id)}\`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify({ stock: nuevoStock })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      toast('✓ Stock actualizado','t-mint');
+      await fetchInventario();
+      buildInventory();
+    } else {
+      toast('⚠ ' + (d.error||'Error'),'t-blush');
+    }
+  } catch { toast('⚠ Error de conexión','t-blush'); }
+}
+
+async function toggleActivo(id, activo) {
+  try {
+    await fetch(\`/admin/inventario/\${encodeURIComponent(id)}\`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify({ activo })
+    });
+    toast(activo ? '✓ Producto activado' : '✓ Producto desactivado','t-mint');
+    await fetchInventario();
+  } catch { toast('⚠ Error de conexión','t-blush'); }
 }
 
 // ══════════════════════════════════════════════
@@ -2192,13 +2509,109 @@ function blockTroll(id) { toast('🚫 Troll bloqueado (próximamente)','t-blush'
 // ══════════════════════════════════════════════
 //  UI CONTROLS
 // ══════════════════════════════════════════════
+// ══════════════════════════════════════════════
+//  PEDIDOS VIEW
+// ══════════════════════════════════════════════
+function filtPed(f, btn) {
+  filtPedidoActual = f;
+  document.querySelectorAll('#ped-filters .chip').forEach(c => c.classList.remove('on'));
+  if (btn) btn.classList.add('on');
+  buildPedidos();
+}
+
+function buildPedidos() {
+  const list = filtPedidoActual === 'todos'
+    ? pedidosData
+    : pedidosData.filter(p => p.estado === filtPedidoActual);
+  const sp = id => document.getElementById(id);
+  if (sp('sp-total'))     sp('sp-total').textContent = pedidosData.length;
+  const pend = pedidosData.filter(p => p.estado === 'pendiente').length;
+  if (sp('sp-pendientes')) sp('sp-pendientes').textContent = pend;
+  const ingreso = pedidosData
+    .filter(p => ['confirmado','preparando','enviado','entregado'].includes(p.estado))
+    .reduce((a,p) => a + (p.total||0), 0);
+  if (sp('sp-ingreso')) sp('sp-ingreso').textContent = '$' + ingreso.toLocaleString();
+  const hoy = new Date().toDateString();
+  const pedHoy = pedidosData.filter(p => new Date(p.creadoEn).toDateString() === hoy).length;
+  if (sp('sp-hoy')) sp('sp-hoy').textContent = pedHoy;
+  const wrap = document.getElementById('ped-table-wrap');
+  if (!wrap) return;
+  if (!pedidosData.length) {
+    wrap.innerHTML = \`<div style="padding:40px;text-align:center;color:var(--c-text3);font-size:12px">
+      Sin pedidos registrados aún 📦<br>
+      <span style="font-size:11px">Los pedidos aparecerán aquí cuando los crees desde el panel de acciones de un chat</span>
+    </div>\`;
+    return;
+  }
+  if (!list.length) {
+    wrap.innerHTML = '<div style="padding:32px;text-align:center;color:var(--c-text3);font-size:12px">Sin pedidos en este filtro</div>';
+    return;
+  }
+  const ESTADOS = ['pendiente','confirmado','preparando','enviado','entregado','cancelado'];
+  wrap.innerHTML = \`
+    <table class="ped-table">
+      <thead><tr>
+        <th>ID</th><th>Cliente</th><th>Productos</th>
+        <th>Total</th><th>Estado</th><th>Fecha</th><th>Cambiar estado</th>
+      </tr></thead>
+      <tbody>
+        \${list.map(p => {
+          const prods = (p.productos||[]).map(x => escapeHtml(x.nombre||x.id)).join(', ') || '—';
+          const fecha = new Date(p.creadoEn).toLocaleDateString('es-MX', {day:'2-digit',month:'short'});
+          const nextEstados = ESTADOS.filter(e => e !== p.estado);
+          return \`<tr>
+            <td class="ped-id">\${escapeHtml(p.id)}</td>
+            <td style="font-size:11px">\${escapeHtml(p.telefono||'')}</td>
+            <td style="font-size:11px;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="\${escapeHtml(prods)}">\${prods}</td>
+            <td class="ped-total">$\${Number(p.total||0).toLocaleString()}</td>
+            <td><span class="status-badge s-\${escapeHtml(p.estado)}">\${escapeHtml(p.estado)}</span></td>
+            <td style="font-size:11px">\${fecha}</td>
+            <td>
+              <select class="qty-edit" style="font-size:10px;width:120px;padding:3px 4px"
+                data-pedid="\${escapeHtml(p.id)}"
+                onchange="updateOrderStatus(this.dataset.pedid, this.value, this)">
+                <option value="">— Estado —</option>
+                \${nextEstados.map(e => \`<option value="\${e}">\${e}</option>\`).join('')}
+              </select>
+            </td>
+          </tr>\`;
+        }).join('')}
+      </tbody>
+    </table>\`;
+}
+
+async function updateOrderStatus(pedidoId, nuevoEstado, sel) {
+  if (!nuevoEstado) return;
+  try {
+    const r = await fetch(\`/admin/pedidos/\${encodeURIComponent(pedidoId)}\`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify({ estado: nuevoEstado })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      toast(\`✓ Pedido \${pedidoId} → \${nuevoEstado}\`,'t-mint');
+      await fetchPedidos();
+    } else {
+      toast('⚠ ' + (d.error||'Error'),'t-blush');
+      if (sel) sel.value = '';
+    }
+  } catch {
+    toast('⚠ Error de conexión','t-blush');
+    if (sel) sel.value = '';
+  }
+}
+
 function view(v) {
-  ['chats','analytics','stock'].forEach(x => {
-    document.getElementById(\`view-\${x}\`).classList.toggle('on', x===v);
-    document.getElementById(\`nb-\${x}\`).classList.toggle('on', x===v);
+  ['chats','analytics','stock','pedidos'].forEach(x => {
+    const viewEl = document.getElementById(\`view-\${x}\`);
+    const nbEl   = document.getElementById(\`nb-\${x}\`);
+    if (viewEl) viewEl.classList.toggle('on', x===v);
+    if (nbEl)   nbEl.classList.toggle('on', x===v);
   });
   if (v==='analytics') buildAnalytics();
   if (v==='stock')     buildInventory();
+  if (v==='pedidos')   buildPedidos();
 }
 function filt(f,btn) {
   filtro=f;
