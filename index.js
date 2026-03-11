@@ -56,6 +56,61 @@ const contadorTrolls   = {};  // contador mensajes ofensivos
 const modoPausa        = {};  // true = humano en control
 const rateLimiter      = {};  // timestamps de mensajes por teléfono
 
+// ── INVENTARIO ──────────────────────────────────────────────
+const inventario = {
+  "beauty-of-joseon-sun": { id:"beauty-of-joseon-sun", nombre:"Beauty of Joseon Relief Sun Rice + Probiotics SPF50+ PA++++", precio:550, stock:10, stockMinimo:3, categoria:"solar",      descripcion:"Viral en TikTok. Acabado sérico, no deja residuo blanco. Ideal piel mixta/grasa.", imagenUrl:"", activo:true, vendidos:0 },
+  "biore-uv-aqua":        { id:"biore-uv-aqua",        nombre:"Bioré UV Aqua Rich Watery Essence SPF50+",                   precio:475, stock:8,  stockMinimo:3, categoria:"solar",      descripcion:"Clásico japonés. Textura de agua, se absorbe al instante. Perfecta bajo maquillaje.", imagenUrl:"", activo:true, vendidos:0 },
+  "shiseido-aqua":        { id:"shiseido-aqua",        nombre:"Mascarilla Shiseido Aqua Intensive",                          precio:500, stock:6,  stockMinimo:2, categoria:"capilar",    descripcion:"Hidratación profunda para cabello seco o dañado.", imagenUrl:"", activo:true, vendidos:0 },
+  "honey-aceite-capilar": { id:"honey-aceite-capilar", nombre:"&Honey Deep Moist Aceite Capilar",                            precio:500, stock:7,  stockMinimo:2, categoria:"capilar",    descripcion:"Superventas en Japón. Brillo tipo K-pop sin residuo graso.", imagenUrl:"", activo:true, vendidos:0 },
+  "cer100-hair-filler":   { id:"cer100-hair-filler",   nombre:"CER-100 Hair Filler Ceramide Treatment",                      precio:395, stock:9,  stockMinimo:3, categoria:"capilar",    descripcion:"Tratamiento de ceramidas. Rellena fibra capilar dañada.", imagenUrl:"", activo:true, vendidos:0 },
+  "tirtir-cushion":       { id:"tirtir-cushion",       nombre:"Tirtir Cushion Mask Fit Red (varios tonos)",                  precio:800, stock:5,  stockMinimo:2, categoria:"maquillaje", descripcion:"El cushion más famoso de K-beauty. Cobertura media-alta, acabado luminoso.", imagenUrl:"", activo:true, vendidos:0 },
+  "heroine-mascara":      { id:"heroine-mascara",      nombre:"Mascara Heroine Make Long & Curl",                            precio:450, stock:8,  stockMinimo:3, categoria:"maquillaje", descripcion:"Ícono del maquillaje japonés. Alarga y riza, resistente al agua.", imagenUrl:"", activo:true, vendidos:0 },
+  "removedor-bifasico":   { id:"removedor-bifasico",   nombre:"Removedor de Maquillaje Bifásico",                            precio:450, stock:10, stockMinimo:3, categoria:"maquillaje", descripcion:"Elimina maquillaje waterproof sin restregar.", imagenUrl:"", activo:true, vendidos:0 },
+  "delineador-waterproof":{ id:"delineador-waterproof",nombre:"Delineador Waterproof Ultra Fino",                            precio:450, stock:12, stockMinimo:3, categoria:"maquillaje", descripcion:"Trazo de precisión, no corre todo el día.", imagenUrl:"", activo:true, vendidos:0 },
+  "rizador-repuesto":     { id:"rizador-repuesto",     nombre:"Repuesto Rizador de Pestañas",                                precio:79,  stock:20, stockMinimo:5, categoria:"maquillaje", descripcion:"Repuesto compatible con rizadores estándar.", imagenUrl:"", activo:true, vendidos:0 },
+  "mascarilla-arroz":     { id:"mascarilla-arroz",     nombre:"Mascarilla de Arroz Exfoliante",                              precio:550, stock:7,  stockMinimo:2, categoria:"skincare",   descripcion:"Exfolia suavemente. Ingrediente estrella del skincare coreano.", imagenUrl:"", activo:true, vendidos:0 },
+  "centellian-madeca":    { id:"centellian-madeca",    nombre:"Centellian 24 Madeca Cream",                                  precio:579, stock:6,  stockMinimo:2, categoria:"skincare",   descripcion:"Centella asiática. Calma rojeces y regenera.", imagenUrl:"", activo:true, vendidos:0 },
+  "dynasty-cream":        { id:"dynasty-cream",        nombre:"Dynasty Cream Lifting & Firming",                             precio:665, stock:5,  stockMinimo:2, categoria:"skincare",   descripcion:"Efecto tensor y reafirmante. Ideal pieles maduras.", imagenUrl:"", activo:true, vendidos:0 },
+  "boj-parches-ojos":     { id:"boj-parches-ojos",     nombre:"Parches de Ojos Beauty of Joseon",                           precio:620, stock:8,  stockMinimo:3, categoria:"skincare",   descripcion:"Desinflamar contorno de ojos en 20 minutos.", imagenUrl:"", activo:true, vendidos:0 },
+  "mixsoon-bean-eye":     { id:"mixsoon-bean-eye",     nombre:"Mixsoon Bean Eye Cream",                                      precio:625, stock:6,  stockMinimo:2, categoria:"skincare",   descripcion:"Extracto de soya. Hidratación y luminosidad bajo ojos.", imagenUrl:"", activo:true, vendidos:0 },
+  "medicube-pdrn":        { id:"medicube-pdrn",        nombre:"Medicube PDRN Peptide Serum",                                 precio:695, stock:5,  stockMinimo:2, categoria:"skincare",   descripcion:"Tecnología de clínicas coreanas. Estimula regeneración celular.", imagenUrl:"", activo:true, vendidos:0 },
+  "medicube-kojic":       { id:"medicube-kojic",       nombre:"Medicube Kojic Acid Serum",                                   precio:695, stock:5,  stockMinimo:2, categoria:"skincare",   descripcion:"Ácido kójico para manchas e hiperpigmentación.", imagenUrl:"", activo:true, vendidos:0 },
+  "anua-heartleaf-set":   { id:"anua-heartleaf-set",   nombre:"Set Anua Heartleaf (limpiador + tónico)",                    precio:720, stock:6,  stockMinimo:2, categoria:"skincare",   descripcion:"Marca viral k-beauty. Calma, hidrata, trata acné.", imagenUrl:"", activo:true, vendidos:0 },
+  "mixsoon-glass-skin":   { id:"mixsoon-glass-skin",   nombre:"Mixsoon Glass Skin Kit",                                      precio:820, stock:4,  stockMinimo:2, categoria:"skincare",   descripcion:"Kit completo para el efecto glass skin coreano.", imagenUrl:"", activo:true, vendidos:0 },
+  "parches-juanetes":     { id:"parches-juanetes",     nombre:"Parches para Juanetes Kyusoku Jikan",                         precio:120, stock:15, stockMinimo:5, categoria:"salud",      descripcion:"Alivio y corrección gradual para juanetes.", imagenUrl:"", activo:true, vendidos:0 },
+};
+
+// ── PEDIDOS ──────────────────────────────────────────────────
+const pedidos = {};
+let contadorPedidos = 1;
+function generarIdPedido() {
+  const año = new Date().getFullYear();
+  return `PED-${año}-${String(contadorPedidos++).padStart(4,"0")}`;
+}
+
+// ── SEGUIMIENTOS AUTOMÁTICOS ──────────────────────────────────
+const seguimientosAuto = {};  // { telefono: [{ tipo, mensaje, enviarEn, enviado, enviadoEn }] }
+
+// ── LEAD SCORING ──────────────────────────────────────────────
+const leadScores = {};  // { telefono: { score, productos, señales, ultimaActualizacion } }
+
+// ── MÉTRICAS ──────────────────────────────────────────────────
+const metricas = {
+  fechaInicio:          new Date().toISOString(),
+  totalConversaciones:  0,
+  totalPedidos:         0,
+  pedidosConfirmados:   0,
+  pedidosCancelados:    0,
+  ingresoTotal:         0,
+  ingresoHoy:           0,
+  pedidosHoy:           0,
+  mensajesHoy:          0,
+  clientesNuevos:       0,
+  productosMencionados: {},  // { productoId: veces }
+  pedidosPorEstado:     { pendiente:0, confirmado:0, preparando:0, enviado:0, entregado:0, cancelado:0 },
+  ultimoReset:          new Date().toDateString(),
+};
+
 // Limpieza de memoria: eliminar conversaciones inactivas > 7 días
 setInterval(() => {
   const limite = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -67,10 +122,44 @@ setInterval(() => {
       delete contadorTrolls[tel];
       delete modoPausa[tel];
       delete rateLimiter[tel];
+      delete leadScores[tel];
+      delete seguimientosAuto[tel];
       console.log(`🧹 Conversación inactiva limpiada: ${tel}`);
     }
   }
 }, 60 * 60 * 1000); // Cada hora
+
+// Scheduler de seguimientos automáticos — revisa cada minuto
+setInterval(async () => {
+  const ahora = Date.now();
+  for (const tel of Object.keys(seguimientosAuto)) {
+    const lista = seguimientosAuto[tel];
+    if (!Array.isArray(lista)) continue;
+    for (const seg of lista) {
+      if (!seg.enviado && seg.enviarEn && ahora >= seg.enviarEn) {
+        const resultado = await enviarMensaje(tel, seg.mensaje);
+        if (resultado.ok) {
+          seg.enviado   = true;
+          seg.enviadoEn = new Date().toISOString();
+          console.log(`📨 Seguimiento automático [${seg.tipo}] enviado a ${tel}`);
+          if (!conversaciones[tel]) conversaciones[tel] = [];
+          conversaciones[tel].push({ role:"assistant", content:`[Seguimiento]: ${seg.mensaje}`, ts:new Date().toISOString() });
+        }
+      }
+    }
+  }
+}, 60 * 1000);
+
+// Reset de métricas diarias a medianoche
+setInterval(() => {
+  const hoy = new Date().toDateString();
+  if (metricas.ultimoReset !== hoy) {
+    metricas.ingresoHoy   = 0;
+    metricas.pedidosHoy   = 0;
+    metricas.mensajesHoy  = 0;
+    metricas.ultimoReset  = hoy;
+  }
+}, 60 * 1000);
 
 // ============================================================
 // SYSTEM PROMPT MIYU BEAUTY
@@ -350,6 +439,223 @@ async function transcribirAudio(audioUrl) {
 }
 
 // ============================================================
+// LÓGICA DE NEGOCIO: Lead Scoring
+// ============================================================
+const SEÑALES_COMPRA = [
+  { patron:/\bquiero\b/i,           puntos:12 },
+  { patron:/\bme\s+interesa\b/i,    puntos:12 },
+  { patron:/\blo\s+quiero\b/i,      puntos:15 },
+  { patron:/\bcuánto\s+cuesta\b/i,  puntos:10 },
+  { patron:/\bprecio\b/i,           puntos:8  },
+  { patron:/\bcómo\s+pago\b/i,      puntos:14 },
+  { patron:/\bpagar\b/i,            puntos:13 },
+  { patron:/\bpedido\b/i,           puntos:10 },
+  { patron:/\bcomprar\b/i,          puntos:12 },
+  { patron:/\bcuándo\s+llega\b/i,   puntos:10 },
+  { patron:/\benvío\b/i,            puntos:8  },
+  { patron:/\bdisponible\b/i,       puntos:7  },
+  { patron:/\bapartarlo?\b/i,       puntos:14 },
+  { patron:/\breservar?\b/i,        puntos:13 },
+  { patron:/\bconfirm[ao]\b/i,      puntos:18 },
+  { patron:/\btransferencia\b/i,    puntos:15 },
+  { patron:/\bcomprobante\b/i,      puntos:18 },
+];
+
+const NOMBRES_PRODUCTOS = {
+  "beauty of joseon":"beauty-of-joseon-sun", "relief sun":"beauty-of-joseon-sun",
+  "bioré":"biore-uv-aqua", "biore":"biore-uv-aqua",
+  "shiseido":"shiseido-aqua",
+  "honey":"honey-aceite-capilar", "&honey":"honey-aceite-capilar",
+  "cer-100":"cer100-hair-filler", "cer100":"cer100-hair-filler",
+  "tirtir":"tirtir-cushion", "cushion":"tirtir-cushion",
+  "heroine":"heroine-mascara", "mascara":"heroine-mascara",
+  "removedor":"removedor-bifasico",
+  "delineador":"delineador-waterproof",
+  "rizador":"rizador-repuesto",
+  "arroz":"mascarilla-arroz",
+  "centellian":"centellian-madeca", "madeca":"centellian-madeca",
+  "dynasty":"dynasty-cream",
+  "parches de ojos":"boj-parches-ojos",
+  "bean eye":"mixsoon-bean-eye",
+  "pdrn":"medicube-pdrn",
+  "kojic":"medicube-kojic",
+  "anua":"anua-heartleaf-set", "heartleaf":"anua-heartleaf-set",
+  "glass skin":"mixsoon-glass-skin",
+  "juanetes":"parches-juanetes",
+};
+
+function actualizarLeadScore(telefono, texto) {
+  if (!leadScores[telefono]) {
+    leadScores[telefono] = { score:0, productos:[], señales:[], ultimaActualizacion: new Date().toISOString() };
+  }
+  const ld = leadScores[telefono];
+  const textoLow = texto.toLowerCase();
+  let delta = 0;
+
+  // Señales de compra
+  for (const s of SEÑALES_COMPRA) {
+    if (s.patron.test(textoLow)) { delta += s.puntos; ld.señales.push(s.patron.source); }
+  }
+
+  // Productos mencionados
+  for (const [termino, pid] of Object.entries(NOMBRES_PRODUCTOS)) {
+    if (textoLow.includes(termino) && !ld.productos.includes(pid)) {
+      ld.productos.push(pid);
+      delta += 10;
+      metricas.productosMencionados[pid] = (metricas.productosMencionados[pid] || 0) + 1;
+    }
+  }
+
+  if (delta > 0) {
+    ld.score = Math.min(100, ld.score + delta);
+    ld.ultimaActualizacion = new Date().toISOString();
+
+    // Actualizar etapa del perfil según score
+    if (perfilesClientes[telefono]) {
+      if (ld.score >= 80)      perfilesClientes[telefono].etapa = "listo";
+      else if (ld.score >= 50) perfilesClientes[telefono].etapa = "caliente";
+      else if (ld.score >= 20) perfilesClientes[telefono].etapa = "tibio";
+    }
+  }
+}
+
+function labelLeadScore(score) {
+  if (score >= 80) return "🔥 Listo para comprar";
+  if (score >= 50) return "♨️  Caliente";
+  if (score >= 20) return "🌡️  Tibio";
+  return "❄️  Frío";
+}
+
+// ============================================================
+// LÓGICA DE NEGOCIO: Pedidos
+// ============================================================
+function crearPedido({ telefono, productos, total, metodoPago, notas, direccion }) {
+  const id = generarIdPedido();
+  pedidos[id] = {
+    id,
+    telefono,
+    productos:         productos || [],
+    total:             total || 0,
+    estado:            "pendiente",
+    metodoPago:        metodoPago || "pendiente",
+    notas:             notas || "",
+    direccion:         direccion || "",
+    comprobante:       null,
+    fechaCreacion:     new Date().toISOString(),
+    fechaActualizacion:new Date().toISOString(),
+    historialEstados:  [{ estado:"pendiente", fecha:new Date().toISOString() }],
+  };
+  metricas.totalPedidos++;
+  metricas.pedidosHoy++;
+  metricas.pedidosPorEstado.pendiente++;
+  console.log(`📦 Nuevo pedido creado: ${id} para ${telefono}`);
+  return pedidos[id];
+}
+
+async function actualizarEstadoPedido(pedidoId, nuevoEstado, notas) {
+  const p = pedidos[pedidoId];
+  if (!p) return { ok:false, error:"Pedido no encontrado" };
+
+  const estadoAnterior = p.estado;
+  metricas.pedidosPorEstado[estadoAnterior] = Math.max(0, (metricas.pedidosPorEstado[estadoAnterior]||0) - 1);
+  metricas.pedidosPorEstado[nuevoEstado]    = (metricas.pedidosPorEstado[nuevoEstado]||0) + 1;
+
+  p.estado             = nuevoEstado;
+  p.fechaActualizacion = new Date().toISOString();
+  if (notas) p.notas  += `\n${notas}`;
+  p.historialEstados.push({ estado:nuevoEstado, fecha:new Date().toISOString(), notas:notas||"" });
+
+  if (nuevoEstado === "confirmado") {
+    metricas.pedidosConfirmados++;
+    metricas.ingresoTotal += p.total;
+    metricas.ingresoHoy   += p.total;
+    // Decrementar stock
+    for (const item of p.productos) {
+      if (inventario[item.productoId]) {
+        inventario[item.productoId].stock    = Math.max(0, inventario[item.productoId].stock - (item.cantidad||1));
+        inventario[item.productoId].vendidos += (item.cantidad||1);
+      }
+    }
+  }
+  if (nuevoEstado === "cancelado") metricas.pedidosCancelados++;
+
+  // Notificar al cliente por WhatsApp
+  const mensajesEstado = {
+    confirmado:  `✅ *¡Tu pedido ${pedidoId} está confirmado!* 🎉\n\nEstamos preparando todo con mucho cariño. En cuanto esté listo te avisamos. ¡Gracias por confiar en Miyu Beauty! 🌸`,
+    preparando:  `🎀 *Pedido ${pedidoId} en preparación*\n\nEstamos armando tu pedido con todo el amor. Te avisamos cuando esté listo para salir.`,
+    enviado:     `🚀 *¡Tu pedido ${pedidoId} ya va en camino!*\n\nEstará contigo en 1-2 días hábiles en Mazatlán. ¡Que lo disfrutes! 💖`,
+    entregado:   `🌸 *Pedido ${pedidoId} entregado*\n\n¡Esperamos que ames tus productos! Si tienes cualquier duda, con mucho gusto te ayudamos. ¿Te gustaría dejarnos una reseña? ⭐`,
+    cancelado:   `ℹ️ Tu pedido ${pedidoId} fue cancelado. Si fue un error o tienes dudas, escríbenos y lo resolvemos. 🙏`,
+  };
+  if (mensajesEstado[nuevoEstado] && p.telefono) {
+    await enviarMensaje(p.telefono, mensajesEstado[nuevoEstado]);
+    if (!conversaciones[p.telefono]) conversaciones[p.telefono] = [];
+    conversaciones[p.telefono].push({ role:"assistant", content:`[Sistema]: ${mensajesEstado[nuevoEstado]}`, ts:new Date().toISOString() });
+  }
+
+  // Programar seguimiento post-entrega
+  if (nuevoEstado === "entregado") programarSeguimiento(p.telefono, "postventa", 72);
+
+  return { ok:true, pedido:p };
+}
+
+// ============================================================
+// LÓGICA DE NEGOCIO: Seguimientos automáticos
+// ============================================================
+const TEMPLATES_SEGUIMIENTO = {
+  reenganche: `¡Hola! 👋 Te escribimos de Miyu Beauty. Notamos que tenías interés en alguno de nuestros productos ✨ ¿Pudiste encontrar lo que buscabas? Con gusto te ayudamos 🌸`,
+  postventa:  `¡Hola! 💖 Esperamos que estés disfrutando tus productos de Miyu Beauty. ¿Cómo te han funcionado? Tu opinión nos ayuda a mejorar 🌟`,
+  abandono:   `¡Hola! 🌸 Vimos que estabas interesada en nuestro catálogo. Por tiempo limitado tenemos envío gratis en pedidos desde $800 😊 ¿Te ayudo a elegir?`,
+};
+
+function programarSeguimiento(telefono, tipo, horasDelay, mensajeCustom) {
+  if (!seguimientosAuto[telefono]) seguimientosAuto[telefono] = [];
+  const mensaje = mensajeCustom || TEMPLATES_SEGUIMIENTO[tipo] || TEMPLATES_SEGUIMIENTO.reenganche;
+  seguimientosAuto[telefono].push({
+    tipo,
+    mensaje,
+    enviarEn:  Date.now() + horasDelay * 60 * 60 * 1000,
+    enviado:   false,
+    enviadoEn: null,
+    creadoEn:  new Date().toISOString(),
+  });
+  console.log(`⏰ Seguimiento [${tipo}] programado para ${telefono} en ${horasDelay}h`);
+}
+
+function cancelarSeguimientos(telefono) {
+  if (seguimientosAuto[telefono]) {
+    seguimientosAuto[telefono].forEach(s => { if (!s.enviado) s.enviado = true; });
+  }
+}
+
+// ============================================================
+// LÓGICA DE NEGOCIO: Cotizaciones
+// ============================================================
+function generarCotizacion(items) {
+  // items = [{ productoId, cantidad }]
+  let lineas = [];
+  let total  = 0;
+  for (const item of items) {
+    const prod = inventario[item.productoId];
+    if (!prod) continue;
+    const subtotal = prod.precio * (item.cantidad || 1);
+    total += subtotal;
+    lineas.push(`• ${prod.nombre} x${item.cantidad||1} — $${subtotal}`);
+  }
+  const envio = total >= 800 ? "GRATIS 🎉" : "$TBD (solo Mazatlán)";
+  return [
+    `📋 *Cotización Miyu Beauty*`,
+    ``,
+    ...lineas,
+    ``,
+    `💰 *Subtotal: $${total}*`,
+    `🚚 Envío: ${envio}`,
+    ``,
+    `¿Confirmas el pedido? Puedo enviarte el link de pago o los datos bancarios 🌸`,
+  ].join("\n");
+}
+
+// ============================================================
 // WEBHOOK: Verificación Meta
 // ============================================================
 app.get("/webhook", (req, res) => {
@@ -386,15 +692,20 @@ app.post("/webhook", async (req, res) => {
     const telefono = mensaje.from;
     const tipo     = mensaje.type;
 
+    // Métricas globales
+    metricas.mensajesHoy++;
+    const esNuevoCliente = !perfilesClientes[telefono];
+    if (esNuevoCliente) metricas.totalConversaciones++;
+
     if (modoPausa[telefono]) {
       // Guardar mensaje del cliente aunque el bot esté pausado, para que aparezca en el dashboard
       if (tipo === "text" && mensaje.text && typeof mensaje.text.body === "string") {
         if (!conversaciones[telefono]) conversaciones[telefono] = [];
-        conversaciones[telefono].push({
-          role: "user",
-          content: mensaje.text.body,
-          ts: new Date().toISOString(),
-        });
+        conversaciones[telefono].push({ role:"user", content:mensaje.text.body, ts:new Date().toISOString() });
+        // Lead scoring incluso en modo humano
+        actualizarLeadScore(telefono, mensaje.text.body);
+        // Si respondió → cancelar seguimientos pendientes
+        cancelarSeguimientos(telefono);
       }
       return;
     }
@@ -410,6 +721,9 @@ app.post("/webhook", async (req, res) => {
     if (tipo === "text") {
       if (!mensaje.text || typeof mensaje.text.body !== "string") return;
       textoUsuario = mensaje.text.body;
+      // Lead scoring y cancelar seguimientos si el cliente respondió
+      actualizarLeadScore(telefono, textoUsuario);
+      cancelarSeguimientos(telefono);
 
     } else if (tipo === "image") {
       try {
@@ -2041,10 +2355,195 @@ app.post("/admin/link-pago", adminAuth, async (req, res) => {
 });
 
 // ============================================================
+// RUTAS: INVENTARIO
+// ============================================================
+app.get("/admin/inventario", adminAuth, (req, res) => {
+  const lista = Object.values(inventario).map(p => ({
+    ...p,
+    estado: p.stock === 0 ? "agotado" : p.stock <= p.stockMinimo ? "bajo" : "ok",
+  }));
+  const bajoStock  = lista.filter(p => p.stock > 0 && p.stock <= p.stockMinimo).length;
+  const agotados   = lista.filter(p => p.stock === 0).length;
+  res.json({ ok:true, productos:lista, total:lista.length, bajoStock, agotados });
+});
+
+app.put("/admin/inventario/:id", adminAuth, (req, res) => {
+  const { id } = req.params;
+  if (!inventario[id]) return res.json({ ok:false, error:"Producto no encontrado" });
+  const { stock, precio, activo, imagenUrl, stockMinimo } = req.body;
+  if (typeof stock     === "number" && stock     >= 0) inventario[id].stock      = Math.floor(stock);
+  if (typeof precio    === "number" && precio    >  0) inventario[id].precio     = precio;
+  if (typeof activo    === "boolean")                  inventario[id].activo     = activo;
+  if (typeof stockMinimo=== "number"&& stockMinimo>=0) inventario[id].stockMinimo= Math.floor(stockMinimo);
+  if (typeof imagenUrl === "string")                   inventario[id].imagenUrl  = imagenUrl.trim();
+  console.log(`📦 Inventario actualizado: ${id}`);
+  res.json({ ok:true, producto:inventario[id] });
+});
+
+app.post("/admin/inventario", adminAuth, (req, res) => {
+  const { nombre, precio, stock, stockMinimo, categoria, descripcion } = req.body;
+  if (!nombre || typeof nombre !== "string" || !nombre.trim()) return res.json({ ok:false, error:"Falta nombre" });
+  if (!precio || typeof precio !== "number" || precio <= 0)    return res.json({ ok:false, error:"Precio inválido" });
+  const id = nombre.toLowerCase().replace(/[^a-z0-9]+/g,"-").slice(0,40);
+  if (inventario[id]) return res.json({ ok:false, error:"Ya existe un producto con ID similar" });
+  inventario[id] = {
+    id, nombre:nombre.trim(), precio, stock:stock||0, stockMinimo:stockMinimo||3,
+    categoria:categoria||"otro", descripcion:descripcion||"", imagenUrl:"", activo:true, vendidos:0,
+  };
+  res.json({ ok:true, producto:inventario[id] });
+});
+
+// ============================================================
+// RUTAS: PEDIDOS
+// ============================================================
+app.get("/admin/pedidos", adminAuth, (req, res) => {
+  const { estado, telefono } = req.query;
+  let lista = Object.values(pedidos).sort((a,b) => new Date(b.fechaCreacion) - new Date(a.fechaCreacion));
+  if (estado && estado !== "todos")    lista = lista.filter(p => p.estado === estado);
+  if (telefono && typeof telefono === "string") lista = lista.filter(p => p.telefono.includes(telefono.trim()));
+  res.json({ ok:true, pedidos:lista, total:lista.length });
+});
+
+app.post("/admin/pedidos", adminAuth, async (req, res) => {
+  const { telefono, productos, total, metodoPago, notas, direccion } = req.body;
+  if (!telefono || typeof telefono !== "string") return res.json({ ok:false, error:"Falta teléfono" });
+  if (!productos || !Array.isArray(productos) || productos.length === 0) return res.json({ ok:false, error:"Falta productos" });
+  if (!total || typeof total !== "number" || total <= 0) return res.json({ ok:false, error:"Total inválido" });
+  const p = crearPedido({ telefono, productos, total, metodoPago, notas, direccion });
+  // Notificar al cliente
+  await enviarMensaje(telefono, `🌸 *¡Hola! Tu pedido ${p.id} ha sido registrado.*\n\nTotal: $${total}\nEstado: Pendiente de confirmación\n\nTe avisamos en cuanto lo confirmemos 💖`);
+  res.json({ ok:true, pedido:p });
+});
+
+app.put("/admin/pedidos/:id", adminAuth, async (req, res) => {
+  const { id } = req.params;
+  const { estado, notas } = req.body;
+  const estados = ["pendiente","confirmado","preparando","enviado","entregado","cancelado"];
+  if (!estado || !estados.includes(estado)) return res.json({ ok:false, error:`Estado inválido. Válidos: ${estados.join(", ")}` });
+  const result = await actualizarEstadoPedido(id, estado, notas);
+  res.json(result);
+});
+
+app.get("/admin/pedidos/:id", adminAuth, (req, res) => {
+  const p = pedidos[req.params.id];
+  if (!p) return res.json({ ok:false, error:"Pedido no encontrado" });
+  res.json({ ok:true, pedido:p });
+});
+
+// ============================================================
+// RUTAS: MÉTRICAS
+// ============================================================
+app.get("/admin/metricas", adminAuth, (req, res) => {
+  const totalChats  = Object.keys(conversaciones).length;
+  const enPausa     = Object.values(modoPausa).filter(Boolean).length;
+  const totalMsgs   = Object.values(conversaciones).reduce((a,c) => a + c.length, 0);
+
+  // Top productos mencionados
+  const topProductos = Object.entries(metricas.productosMencionados)
+    .sort((a,b) => b[1]-a[1]).slice(0,5)
+    .map(([id, veces]) => ({ id, nombre:inventario[id]?.nombre || id, veces }));
+
+  // Top productos vendidos
+  const topVendidos = Object.values(inventario)
+    .sort((a,b) => b.vendidos - a.vendidos).slice(0,5)
+    .map(p => ({ id:p.id, nombre:p.nombre, vendidos:p.vendidos, ingresos:p.vendidos*p.precio }));
+
+  // Leads calientes
+  const leads = Object.entries(leadScores)
+    .filter(([,ld]) => ld.score >= 50)
+    .sort((a,b) => b[1].score - a[1].score)
+    .slice(0,10)
+    .map(([tel,ld]) => ({
+      telefono:tel,
+      nombre: perfilesClientes[tel]?.nombre || tel,
+      score:ld.score,
+      label:labelLeadScore(ld.score),
+      productos:ld.productos,
+    }));
+
+  res.json({
+    ok:true,
+    metricas: {
+      ...metricas,
+      totalChatsActivos:  totalChats,
+      enControlHumano:    enPausa,
+      totalMensajes:      totalMsgs,
+      pedidosPendientes:  Object.values(pedidos).filter(p=>p.estado==="pendiente").length,
+      valorInventario:    Object.values(inventario).reduce((a,p)=>a+p.precio*p.stock,0),
+      topProductosMencionados: topProductos,
+      topProductosVendidos:    topVendidos,
+      leads,
+    }
+  });
+});
+
+// ============================================================
+// RUTAS: SEGUIMIENTOS
+// ============================================================
+app.get("/admin/seguimientos", adminAuth, (req, res) => {
+  const lista = [];
+  for (const [tel, segs] of Object.entries(seguimientosAuto)) {
+    for (const s of segs) {
+      lista.push({ telefono:tel, nombre:perfilesClientes[tel]?.nombre||tel, ...s });
+    }
+  }
+  lista.sort((a,b) => a.enviarEn - b.enviarEn);
+  res.json({ ok:true, seguimientos:lista, total:lista.length });
+});
+
+app.post("/admin/seguimientos", adminAuth, (req, res) => {
+  const { telefono, tipo, horasDelay, mensaje } = req.body;
+  if (!telefono || typeof telefono !== "string") return res.json({ ok:false, error:"Falta teléfono" });
+  if (!horasDelay || typeof horasDelay !== "number" || horasDelay < 0) return res.json({ ok:false, error:"horasDelay inválido" });
+  programarSeguimiento(telefono, tipo||"reenganche", horasDelay, mensaje);
+  res.json({ ok:true });
+});
+
+app.delete("/admin/seguimientos/:telefono", adminAuth, (req, res) => {
+  const { telefono } = req.params;
+  cancelarSeguimientos(telefono);
+  res.json({ ok:true });
+});
+
+// ============================================================
+// RUTAS: COTIZACIONES
+// ============================================================
+app.post("/admin/cotizacion", adminAuth, async (req, res) => {
+  const { telefono, items, enviar } = req.body;
+  if (!items || !Array.isArray(items) || items.length === 0) return res.json({ ok:false, error:"Falta items" });
+  const texto = generarCotizacion(items);
+  if (enviar && telefono) {
+    const r = await enviarMensaje(telefono, texto);
+    if (!r.ok) return res.json({ ok:false, error:r.error });
+    if (!conversaciones[telefono]) conversaciones[telefono] = [];
+    conversaciones[telefono].push({ role:"assistant", content:`[Cotización]: ${texto}`, ts:new Date().toISOString() });
+  }
+  res.json({ ok:true, texto });
+});
+
+// ============================================================
+// RUTAS: LEADS
+// ============================================================
+app.get("/admin/leads", adminAuth, (req, res) => {
+  const lista = Object.entries(leadScores)
+    .map(([tel, ld]) => ({
+      telefono:  tel,
+      nombre:    perfilesClientes[tel]?.nombre || tel,
+      score:     ld.score,
+      label:     labelLeadScore(ld.score),
+      productos: ld.productos.map(id => inventario[id]?.nombre || id),
+      señales:   ld.señales.slice(-5),
+      ultimaInteraccion: perfilesClientes[tel]?.ultimoMensaje || ld.ultimaActualizacion,
+    }))
+    .sort((a,b) => b.score - a.score);
+  res.json({ ok:true, leads:lista, total:lista.length });
+});
+
+// ============================================================
 // HEALTH CHECK
 // ============================================================
 app.get("/", (req, res) => {
-  res.send("🌸 Miyu Beauty Chatbot v2.2 activo");
+  res.send("🌸 Miyu Beauty Chatbot v3.0 activo");
 });
 
 // ============================================================
