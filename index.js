@@ -2762,41 +2762,62 @@ async function send() {
     }
   } catch { toast('⚠ Error de conexión','t-blush'); }
 }
+// Corrige orientación EXIF y redimensiona usando Canvas + createImageBitmap
+async function fixImgOrientation(file) {
+  // imageOrientation:'from-image' aplica la etiqueta EXIF antes de dibujar en canvas
+  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  const MAX = 1600; // máx lado largo en px
+  let w = bitmap.width, h = bitmap.height;
+  if (w > MAX || h > MAX) {
+    const r = Math.min(MAX / w, MAX / h);
+    w = Math.round(w * r);
+    h = Math.round(h * r);
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width  = w;
+  canvas.height = h;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+  bitmap.close();
+  return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.88));
+}
+
 async function sendImage(input) {
-  if (!input.files || !input.files[0] || !activo) {
-    input.value = '';
-    return;
-  }
+  if (!input.files || !input.files[0] || !activo) { input.value=''; return; }
   if (activo.bot) { toast('⚠ Toma control primero','t-blush'); input.value=''; return; }
-  const file = input.files[0];
-  if (file.size > 4.5 * 1024 * 1024) {
-    toast('⚠ Imagen muy grande (máx 4.5 MB)','t-blush');
-    input.value = '';
-    return;
-  }
+  const file    = input.files[0];
   const caption = prompt('Pie de foto (opcional — puedes dejarlo vacío):') || '';
-  toast('⏳ Enviando imagen…','t-gold');
+  input.value   = '';
+  toast('⏳ Procesando imagen…','t-gold');
   try {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const base64 = e.target.result; // data:image/jpeg;base64,...
-      const r = await fetch('/admin/enviar-imagen', {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ telefono: activo.id, base64, mimeType: file.type, caption })
-      });
-      const d = await r.json();
-      if (d.ok) {
-        activo.msgs.push({ role:'agent', txt: '📷 ' + (caption || 'Imagen enviada'), ts:'ahora' });
-        toast('✓ Imagen enviada','t-mint');
-        renderCenter();
-      } else {
-        toast('⚠ Error: ' + (d.error||''),'t-blush');
-      }
-    };
-    reader.readAsDataURL(file);
-  } catch { toast('⚠ Error de conexión','t-blush'); }
-  input.value = '';
+    // Corregir orientación EXIF + redimensionar si es necesario
+    const blob   = await fixImgOrientation(file);
+    const base64 = await new Promise((res, rej) => {
+      const reader = new FileReader();
+      reader.onload  = e => res(e.target.result);
+      reader.onerror = rej;
+      reader.readAsDataURL(blob);
+    });
+    if (base64.length > 5_800_000) {
+      toast('⚠ Imagen muy grande incluso después de comprimir','t-blush');
+      return;
+    }
+    const r = await fetch('/admin/enviar-imagen', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ telefono: activo.id, base64, mimeType: 'image/jpeg', caption })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      activo.msgs.push({ role:'agent', txt:'📷 ' + (caption || 'Imagen enviada'), ts:'ahora' });
+      toast('✓ Imagen enviada','t-mint');
+      renderCenter();
+    } else {
+      toast('⚠ Error: ' + (d.error||''),'t-blush');
+    }
+  } catch(err) {
+    console.error('sendImage:', err);
+    toast('⚠ Error al procesar la imagen','t-blush');
+  }
 }
 async function genLink(id) {
   const m = prompt('Monto del pedido (MXN):');
