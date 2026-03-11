@@ -166,7 +166,7 @@ setInterval(() => {
 // ============================================================
 const SYSTEM_PROMPT = `Eres asesora de ventas de Miyu Beauty, tienda especializada en maquillaje y skincare coreano/japonés en Mazatlán, Sinaloa.
 
-PERSONALIDAD: Eres cálida, atenta y apasionada por el k-beauty y j-beauty. Hablas en español mexicano natural, de forma cercana y amable. Usas emojis con moderación. Cuando alguien pregunta por un producto, te emocionas genuinamente: explicas sus beneficios, para qué tipo de piel o persona es ideal, y si es usado o recomendado por maquillistas o artistas, lo mencionas. Eres honesta, nunca presionas, pero sí orientas con entusiasmo y conocimiento.
+PERSONALIDAD: Eres cálida y conocedora del k-beauty. Hablas en español mexicano natural, como una amiga que sabe de skincare. Eres concisa: respuestas cortas y directas, máximo 3-4 oraciones por mensaje. Usas máximo 1 o 2 emojis por respuesta, nunca más. No uses asteriscos para negritas en conversación normal, solo úsalos en listas de productos o precios. Cuando pregunten por un producto, da lo más importante en pocas palabras: qué hace, para quién es ideal, y si lo usan maquillistas. Nunca presiones, pero sí orienta.
 
 CATÁLOGO COMPLETO:
 🌞 PROTECCIÓN SOLAR:
@@ -237,10 +237,16 @@ FLUJO DE VENTA:
 6. Pide comprobante de pago para confirmar pedido.
 7. Confirma pedido y tiempo de entrega (1-2 días hábiles en Mazatlán).
 
+FORMATO DE RESPUESTA:
+- Máximo 3-4 oraciones. Si tienes que dar más información, prioriza lo más útil.
+- No uses listas largas si no te las piden. Responde lo que preguntaron.
+- Evita repetir lo que ya dijiste antes en la conversación.
+- Si vas a dar precio y descripción de un producto, hazlo en 2 líneas, no en un párrafo.
+
 IMPORTANTE:
-- Si alguien manda una foto de piel/rostro, analízala y recomienda productos específicos con explicación detallada.
-- Si mandan comprobante de pago, confírmalo y agradece.
-- Si preguntan por algo que no tenemos, sé honesta y sugiere la alternativa más cercana del catálogo.
+- Si alguien manda una foto de piel/rostro, analízala brevemente y recomienda 1-2 productos concretos.
+- Si mandan comprobante de pago, confírmalo en 1-2 líneas y agradece.
+- Si preguntan por algo que no tenemos, dilo directo y sugiere la alternativa más parecida.
 - Nunca inventes precios ni productos.
 - Si detectas intención de compra fuerte, ofrece el link de pago de Mercado Pago.`;
 
@@ -341,6 +347,45 @@ async function enviarMensaje(telefono, texto) {
   } catch (err) {
     console.error("Error enviarMensaje:", err.message);
     return { ok: false, error: err.message };
+  }
+}
+
+// ============================================================
+// FUNCIÓN: Delay humanizado + envío en 2 partes
+// ============================================================
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/** Divide una respuesta larga en 2 partes en el punto más natural */
+function partirRespuesta(texto) {
+  if (texto.length < 120) return [texto];  // corta → 1 solo mensaje
+
+  // Buscar corte en salto de párrafo
+  const porParrafo = texto.indexOf("\n\n");
+  if (porParrafo > 60 && porParrafo < texto.length - 60)
+    return [texto.slice(0, porParrafo).trim(), texto.slice(porParrafo).trim()];
+
+  // Buscar corte en punto + espacio después de la mitad del primer tercio
+  const umbral = Math.floor(texto.length * 0.4);
+  const porPunto = texto.indexOf(". ", umbral);
+  if (porPunto !== -1 && porPunto < texto.length - 40)
+    return [texto.slice(0, porPunto + 1).trim(), texto.slice(porPunto + 2).trim()];
+
+  return [texto];  // no se encontró corte natural
+}
+
+/** Envía respuesta del bot con delay humano y en 2 partes si aplica */
+async function enviarRespuestaBot(telefono, texto) {
+  // Delay inicial: simula que está escribiendo (2-5 segundos según longitud)
+  const delayInicial = 2000 + Math.min(texto.length * 15, 3000);
+  await sleep(delayInicial);
+
+  const partes = partirRespuesta(texto);
+  await enviarMensaje(telefono, partes[0]);
+
+  if (partes[1]) {
+    // Pequeña pausa entre mensajes (1-2 s)
+    await sleep(1000 + Math.random() * 1000);
+    await enviarMensaje(telefono, partes[1]);
   }
 }
 
@@ -803,7 +848,7 @@ app.post("/webhook", async (req, res) => {
         });
         actualizarPerfil(telefono);
 
-        await enviarMensaje(telefono, respuesta);
+        await enviarRespuestaBot(telefono, respuesta);
         return;
       } catch (imgErr) {
         console.error("Error procesando imagen:", imgErr.message);
@@ -873,7 +918,7 @@ app.post("/webhook", async (req, res) => {
     }
 
     const respuesta = await llamarClaude(telefono, textoUsuario);
-    await enviarMensaje(telefono, respuesta);
+    await enviarRespuestaBot(telefono, respuesta);
 
   } catch (err) {
     console.error("Error en webhook:", err.message);
