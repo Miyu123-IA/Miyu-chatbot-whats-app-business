@@ -1,5 +1,6 @@
 "use strict";
-const express = require("express");
+const express  = require("express");
+const FormData = require("form-data");
 const app = express();
 
 // ============================================================
@@ -26,7 +27,7 @@ if (missingVars.length > 0) {
 // ============================================================
 // MIDDLEWARE GLOBAL
 // ============================================================
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "6mb" }));
 
 // Headers de seguridad (CSP, anti-clickjacking, etc.)
 app.use((req, res, next) => {
@@ -346,6 +347,75 @@ async function enviarMensaje(telefono, texto) {
     return { ok: true, data };
   } catch (err) {
     console.error("Error enviarMensaje:", err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
+// ============================================================
+// FUNCIÓN: Subir imagen a WhatsApp Media API
+// ============================================================
+async function subirMediaWA(buffer, mimeType, filename) {
+  try {
+    const fd = new FormData();
+    fd.append("messaging_product", "whatsapp");
+    fd.append("file", buffer, { filename: filename || "photo.jpg", contentType: mimeType });
+    const res = await fetchConTimeout(
+      `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/media`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+          ...fd.getHeaders(),
+        },
+        body: fd,
+      },
+      30000
+    );
+    const data = await res.json();
+    if (!res.ok) {
+      const errMsg = data?.error?.message || JSON.stringify(data).slice(0, 200);
+      return { ok: false, error: errMsg };
+    }
+    return { ok: true, mediaId: data.id };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+// ============================================================
+// FUNCIÓN: Enviar imagen por WhatsApp (mediaId o URL pública)
+// ============================================================
+async function enviarImagen(telefono, { mediaId, url, caption = "" }) {
+  try {
+    const imageField = mediaId
+      ? { id: mediaId, ...(caption ? { caption } : {}) }
+      : { link: url, ...(caption ? { caption } : {}) };
+    const res = await fetchConTimeout(
+      `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to: telefono,
+          type: "image",
+          image: imageField,
+        }),
+      },
+      20000
+    );
+    const data = await res.json();
+    if (!res.ok) {
+      const errMsg = data?.error?.message || JSON.stringify(data).slice(0, 200);
+      console.error(`Error enviarImagen HTTP ${res.status}: ${errMsg}`);
+      return { ok: false, error: errMsg };
+    }
+    return { ok: true, data };
+  } catch (err) {
+    console.error("Error enviarImagen:", err.message);
     return { ok: false, error: err.message };
   }
 }
@@ -1266,6 +1336,14 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
 }
 .ibar-send:hover { background:var(--c-gold-lt); transform:scale(1.05); }
 .ibar-send:disabled { opacity:.3; cursor:default; transform:none; }
+.ibar-img-btn {
+  display:flex; align-items:center; justify-content:center;
+  width:36px; height:36px; border-radius:50%; font-size:16px;
+  background:var(--c-surface2); border:1px solid var(--c-bord);
+  flex-shrink:0; transition:background .15s, transform .1s;
+  user-select:none;
+}
+.ibar-img-btn:not(.disabled):hover { background:var(--c-surface3); transform:scale(1.08); }
 
 /* Empty state */
 .empty {
@@ -2058,7 +2136,7 @@ function renderCenter() {
     <div class="ibar">
       <div class="ibar-mode">
         <div class="pip \${c.bot?'pip-bot':'pip-human'}"></div>
-        \${c.bot ? 'Bot respondiendo automáticamente — toma control para escribir' : '⚡ Estás en control · respondiendo como Guadalupe'}
+        \${c.bot ? 'Bot respondiendo automáticamente — toma control para escribir' : '⚡ Estás en control · modo agente'}
       </div>
       <div class="ibar-row">
         <textarea class="ibar-input" id="ibar-txt"
@@ -2066,6 +2144,12 @@ function renderCenter() {
           \${c.bot?'disabled':''}
           onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}"
         ></textarea>
+        <label class="ibar-img-btn \${c.bot?'disabled':''}" title="Enviar foto"
+          style="cursor:\${c.bot?'not-allowed':'pointer'};opacity:\${c.bot?'.4':'1'}">
+          📷
+          <input type="file" id="ibar-file" accept="image/*" style="display:none"
+            \${c.bot?'disabled':''} onchange="sendImage(this)">
+        </label>
         <button class="ibar-send" onclick="send()" \${c.bot?'disabled':''}>➤</button>
       </div>
     </div>
@@ -2478,6 +2562,42 @@ async function send() {
     }
   } catch { toast('⚠ Error de conexión','t-blush'); }
 }
+async function sendImage(input) {
+  if (!input.files || !input.files[0] || !activo) {
+    input.value = '';
+    return;
+  }
+  if (activo.bot) { toast('⚠ Toma control primero','t-blush'); input.value=''; return; }
+  const file = input.files[0];
+  if (file.size > 4.5 * 1024 * 1024) {
+    toast('⚠ Imagen muy grande (máx 4.5 MB)','t-blush');
+    input.value = '';
+    return;
+  }
+  const caption = prompt('Pie de foto (opcional — puedes dejarlo vacío):') || '';
+  toast('⏳ Enviando imagen…','t-gold');
+  try {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const base64 = e.target.result; // data:image/jpeg;base64,...
+      const r = await fetch('/admin/enviar-imagen', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ telefono: activo.id, base64, mimeType: file.type, caption })
+      });
+      const d = await r.json();
+      if (d.ok) {
+        activo.msgs.push({ role:'agent', txt: '📷 ' + (caption || 'Imagen enviada'), ts:'ahora' });
+        toast('✓ Imagen enviada','t-mint');
+        renderCenter();
+      } else {
+        toast('⚠ Error: ' + (d.error||''),'t-blush');
+      }
+    };
+    reader.readAsDataURL(file);
+  } catch { toast('⚠ Error de conexión','t-blush'); }
+  input.value = '';
+}
 async function genLink(id) {
   const m = prompt('Monto del pedido (MXN):');
   if (!m) return;
@@ -2716,6 +2836,45 @@ app.post("/admin/enviar", adminAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.json({ ok: false, error: "Error interno al enviar mensaje" });
+  }
+});
+
+// ── Enviar imagen (base64 upload o URL pública) ────────────
+app.post("/admin/enviar-imagen", adminAuth, async (req, res) => {
+  const { telefono, base64, mimeType, url, caption = "" } = req.body;
+  if (!telefono || typeof telefono !== "string" || !telefono.trim())
+    return res.json({ ok: false, error: "Falta teléfono válido" });
+  if (!base64 && !url)
+    return res.json({ ok: false, error: "Falta base64 o url de imagen" });
+
+  try {
+    let resultado;
+    if (base64) {
+      // Validar base64 básico
+      const cleanB64 = base64.replace(/^data:image\/[a-z]+;base64,/, "");
+      const buffer   = Buffer.from(cleanB64, "base64");
+      if (buffer.length < 100) return res.json({ ok: false, error: "Imagen inválida o muy pequeña" });
+      const ext  = (mimeType || "image/jpeg").split("/")[1] || "jpg";
+      const mime = mimeType || "image/jpeg";
+      const upload = await subirMediaWA(buffer, mime, `foto.${ext}`);
+      if (!upload.ok) return res.json({ ok: false, error: "Error subiendo imagen: " + upload.error });
+      resultado = await enviarImagen(telefono, { mediaId: upload.mediaId, caption });
+    } else {
+      resultado = await enviarImagen(telefono, { url, caption });
+    }
+
+    if (!resultado.ok) return res.json({ ok: false, error: resultado.error });
+
+    if (!conversaciones[telefono]) conversaciones[telefono] = [];
+    conversaciones[telefono].push({
+      role: "assistant",
+      content: `[Agente humano]: 📷 ${caption || "Imagen enviada"}`,
+      ts: new Date().toISOString(),
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Error /admin/enviar-imagen:", err.message);
+    res.json({ ok: false, error: "Error interno al enviar imagen" });
   }
 });
 
