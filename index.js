@@ -368,7 +368,18 @@ app.post("/webhook", async (req, res) => {
     const telefono = mensaje.from;
     const tipo     = mensaje.type;
 
-    if (modoPausa[telefono]) return;
+    if (modoPausa[telefono]) {
+      // Guardar mensaje del cliente aunque el bot esté pausado, para que aparezca en el dashboard
+      if (tipo === "text" && mensaje.text && typeof mensaje.text.body === "string") {
+        if (!conversaciones[telefono]) conversaciones[telefono] = [];
+        conversaciones[telefono].push({
+          role: "user",
+          content: mensaje.text.body,
+          ts: new Date().toISOString(),
+        });
+      }
+      return;
+    }
 
     // Rate limiting por teléfono
     if (!checkRateLimit(telefono)) {
