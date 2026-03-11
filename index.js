@@ -119,7 +119,7 @@ async function enviarMensaje(telefono, texto) {
 async function llamarClaude(telefono, mensajeUsuario) {
   if (!conversaciones[telefono]) conversaciones[telefono] = [];
 
-  conversaciones[telefono].push({ role: "user", content: mensajeUsuario });
+  conversaciones[telefono].push({ role: "user", content: mensajeUsuario, ts: new Date().toISOString() });
 
   // Mantener máximo 20 mensajes en historial
   if (conversaciones[telefono].length > 20) {
@@ -149,7 +149,7 @@ async function llamarClaude(telefono, mensajeUsuario) {
     }
 
     const respuesta = data.content[0].text;
-    conversaciones[telefono].push({ role: "assistant", content: respuesta });
+    conversaciones[telefono].push({ role: "assistant", content: respuesta, ts: new Date().toISOString() });
 
     // Actualizar perfil básico
     if (!perfilesClientes[telefono]) {
@@ -1173,10 +1173,18 @@ async function fetchChats() {
     if (activo) {
       const u = chats.find(x => x.id === activo.id);
       if (u) {
-        const msgsChanged = u.msgs.length !== activo.msgs.length;
+        const msgsChanged = u.msgs.length !== activo.msgs.length
+          || (u.msgs.at(-1)?.ts !== activo.msgs.at(-1)?.ts);
         const botChanged  = u.bot !== activo.bot;
+        const inputActual = document.getElementById('ibar-txt')?.value || '';
         activo = u;
-        if (msgsChanged || botChanged) renderCenter();
+        if (msgsChanged || botChanged) {
+          renderCenter();
+          if (inputActual) {
+            const el = document.getElementById('ibar-txt');
+            if (el) el.value = inputActual;
+          }
+        }
       }
     }
   } catch(e) { console.error('fetchChats error:', e); }
@@ -1628,6 +1636,7 @@ app.post("/admin/enviar", async (req, res) => {
     conversaciones[telefono].push({
       role: "assistant",
       content: `[Agente humano]: ${mensaje}`,
+      ts: new Date().toISOString(),
     });
 
     res.json({ ok: true });
@@ -1666,7 +1675,7 @@ app.get("/admin/chats", (req, res) => {
             : typeof m.content?.[0]?.text === "string"
             ? m.content[0].text
             : "[media]",
-        hora: new Date().toISOString(),
+        hora: m.ts || new Date().toISOString(),
       })),
     };
   });
