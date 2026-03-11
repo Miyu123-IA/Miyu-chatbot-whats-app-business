@@ -1,28 +1,81 @@
+"use strict";
 const express = require("express");
 const app = express();
-app.use(express.json());
 
+// ============================================================
+// VARIABLES DE ENTORNO
+// ============================================================
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || "miyu2026";
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || null;
-const PORT = process.env.PORT || 3000;
+const VERIFY_TOKEN      = process.env.WHATSAPP_VERIFY_TOKEN || "miyu2026";
+const WHATSAPP_TOKEN    = process.env.WHATSAPP_TOKEN;
+const PHONE_NUMBER_ID   = process.env.PHONE_NUMBER_ID;
+const OPENAI_API_KEY    = process.env.OPENAI_API_KEY || null;
+const PORT              = process.env.PORT || 3000;
+const ADMIN_TOKEN       = process.env.ADMIN_TOKEN || "miyu-admin-2026";
+
+// Validar variables críticas al arranque (warnings, no crash)
+const missingVars = [];
+if (!ANTHROPIC_API_KEY) missingVars.push("ANTHROPIC_API_KEY");
+if (!WHATSAPP_TOKEN)    missingVars.push("WHATSAPP_TOKEN");
+if (!PHONE_NUMBER_ID)   missingVars.push("PHONE_NUMBER_ID");
+if (missingVars.length > 0) {
+  console.error(`⚠️  Variables de entorno faltantes: ${missingVars.join(", ")}`);
+  console.error("El servidor inicia, pero esas funciones no estarán disponibles.");
+}
+
+// ============================================================
+// MIDDLEWARE GLOBAL
+// ============================================================
+app.use(express.json({ limit: "2mb" }));
+
+// Headers de seguridad (CSP, anti-clickjacking, etc.)
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader(
+    "Content-Security-Policy",
+    [
+      "default-src 'self'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src https://fonts.gstatic.com",
+      "script-src 'self' 'unsafe-inline'",
+      "img-src 'self' data:",
+      "connect-src 'self'",
+    ].join("; ")
+  );
+  next();
+});
 
 // ============================================================
 // ESTADO EN MEMORIA
 // ============================================================
-const conversaciones = {};       // historial por teléfono
-const perfilesClientes = {};     // perfil por teléfono
-const carritosAbandonados = {};  // carrito por teléfono
-const contadorTrolls = {};       // contador mensajes ofensivos
-const pedidosPendientes = {};    // pedidos en proceso
-const modoPausa = {};            // true = humano en control
+const conversaciones   = {};  // historial por teléfono
+const perfilesClientes = {};  // perfil por teléfono
+const contadorTrolls   = {};  // contador mensajes ofensivos
+const modoPausa        = {};  // true = humano en control
+const rateLimiter      = {};  // timestamps de mensajes por teléfono
+
+// Limpieza de memoria: eliminar conversaciones inactivas > 7 días
+setInterval(() => {
+  const limite = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  for (const tel of Object.keys(conversaciones)) {
+    const perfil = perfilesClientes[tel];
+    if (!perfil || new Date(perfil.ultimoMensaje).getTime() < limite) {
+      delete conversaciones[tel];
+      delete perfilesClientes[tel];
+      delete contadorTrolls[tel];
+      delete modoPausa[tel];
+      delete rateLimiter[tel];
+      console.log(`🧹 Conversación inactiva limpiada: ${tel}`);
+    }
+  }
+}, 60 * 60 * 1000); // Cada hora
 
 // ============================================================
 // SYSTEM PROMPT MIYU BEAUTY
 // ============================================================
-const SYSTEM_PROMPT = `Eres Guadalupe, asesora de ventas de Miyu Beauty, tienda de maquillaje y skincare coreano/japonés en Mazatlán, Sinaloa. 
+const SYSTEM_PROMPT = `Eres Guadalupe, asesora de ventas de Miyu Beauty, tienda de maquillaje y skincare coreano/japonés en Mazatlán, Sinaloa.
 
 PERSONALIDAD: Eres cálida, entusiasta, conocedora de k-beauty y j-beauty. Hablas en español mexicano natural. Usas emojis con moderación. Eres honesta sobre productos y nunca presionas.
 
@@ -61,7 +114,7 @@ ENVÍOS: Solo Mazatlán por el momento. Envío gratis en pedidos +$800.
 MÉTODOS DE PAGO: Transferencia bancaria o Mercado Pago.
 DATOS BANCARIOS:
 - Banco: STP
-- Titular: Maria Guadalupe González Miranda  
+- Titular: Maria Guadalupe González Miranda
 - Tarjeta: 5319 9500 1011 4248
 - CLABE: 646990404045356290
 
@@ -85,11 +138,77 @@ IMPORTANTE:
 - Si detectas intención de compra fuerte, ofrece el link de pago de Mercado Pago.`;
 
 // ============================================================
+// UTILIDADES
+// ============================================================
+
+/** fetch con timeout usando AbortController */
+async function fetchConTimeout(url, options = {}, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+/** Rate limiting: máx 10 mensajes/minuto por teléfono */
+function checkRateLimit(telefono) {
+  const ahora = Date.now();
+  if (!rateLimiter[telefono]) rateLimiter[telefono] = [];
+  rateLimiter[telefono] = rateLimiter[telefono].filter(t => ahora - t < 60000);
+  if (rateLimiter[telefono].length >= 10) return false;
+  rateLimiter[telefono].push(ahora);
+  return true;
+}
+
+/** Crear o actualizar perfil de cliente (evita lógica duplicada) */
+function actualizarPerfil(telefono) {
+  if (!perfilesClientes[telefono]) {
+    perfilesClientes[telefono] = {
+      telefono,
+      primerContacto:  new Date().toISOString(),
+      ultimoMensaje:   new Date().toISOString(),
+      mensajes:        1,
+      esVIP:           false,
+      notas:           "",
+      etapa:           "nuevo",
+    };
+  } else {
+    perfilesClientes[telefono].ultimoMensaje = new Date().toISOString();
+    perfilesClientes[telefono].mensajes++;
+  }
+}
+
+/** Mantener el historial dentro del límite */
+function aplicarLimiteHistorial(telefono, max = 20) {
+  if (conversaciones[telefono] && conversaciones[telefono].length > max) {
+    conversaciones[telefono] = conversaciones[telefono].slice(-max);
+  }
+}
+
+// ============================================================
+// AUTENTICACIÓN ADMIN
+// ============================================================
+function adminAuth(req, res, next) {
+  const authHeader = req.headers["authorization"] || "";
+  const tokenQuery = req.query.token || "";
+  const token = authHeader.startsWith("Bearer ")
+    ? authHeader.slice(7)
+    : tokenQuery;
+
+  if (!token || token !== ADMIN_TOKEN) {
+    return res.status(401).json({ ok: false, error: "No autorizado" });
+  }
+  next();
+}
+
+// ============================================================
 // FUNCIÓN: Enviar mensaje WhatsApp
 // ============================================================
 async function enviarMensaje(telefono, texto) {
   try {
-    const res = await fetch(
+    const res = await fetchConTimeout(
       `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
       {
         method: "POST",
@@ -106,10 +225,14 @@ async function enviarMensaje(telefono, texto) {
       }
     );
     const data = await res.json();
-    if (!res.ok) console.error("Error WA:", JSON.stringify(data));
-    return data;
+    if (!res.ok) {
+      console.error(`Error WA HTTP ${res.status}`);
+      return { ok: false, error: `WhatsApp API error: ${res.status}` };
+    }
+    return { ok: true, data };
   } catch (err) {
     console.error("Error enviarMensaje:", err.message);
+    return { ok: false, error: err.message };
   }
 }
 
@@ -119,15 +242,15 @@ async function enviarMensaje(telefono, texto) {
 async function llamarClaude(telefono, mensajeUsuario) {
   if (!conversaciones[telefono]) conversaciones[telefono] = [];
 
-  conversaciones[telefono].push({ role: "user", content: mensajeUsuario, ts: new Date().toISOString() });
-
-  // Mantener máximo 20 mensajes en historial
-  if (conversaciones[telefono].length > 20) {
-    conversaciones[telefono] = conversaciones[telefono].slice(-20);
-  }
+  conversaciones[telefono].push({
+    role: "user",
+    content: mensajeUsuario,
+    ts: new Date().toISOString(),
+  });
+  aplicarLimiteHistorial(telefono, 20);
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetchConTimeout("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "x-api-key": ANTHROPIC_API_KEY,
@@ -135,7 +258,7 @@ async function llamarClaude(telefono, mensajeUsuario) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-opus-4-5",
+        model: "claude-opus-4-6",
         max_tokens: 1024,
         system: SYSTEM_PROMPT,
         messages: conversaciones[telefono].map(({ role, content }) => ({ role, content })),
@@ -144,28 +267,28 @@ async function llamarClaude(telefono, mensajeUsuario) {
 
     const data = await res.json();
     if (!res.ok) {
-      console.error("Error Claude:", JSON.stringify(data));
+      console.error(`Error Claude HTTP ${res.status}`);
+      return "Disculpa, tuve un problema técnico. ¿Puedes repetir tu mensaje? 🙏";
+    }
+
+    // Validar estructura de respuesta antes de acceder
+    if (
+      !data.content ||
+      !Array.isArray(data.content) ||
+      data.content.length === 0 ||
+      typeof data.content[0].text !== "string"
+    ) {
+      console.error("Respuesta de Claude con formato inesperado:", JSON.stringify(data).slice(0, 200));
       return "Disculpa, tuve un problema técnico. ¿Puedes repetir tu mensaje? 🙏";
     }
 
     const respuesta = data.content[0].text;
-    conversaciones[telefono].push({ role: "assistant", content: respuesta, ts: new Date().toISOString() });
-
-    // Actualizar perfil básico
-    if (!perfilesClientes[telefono]) {
-      perfilesClientes[telefono] = {
-        telefono,
-        primerContacto: new Date().toISOString(),
-        ultimoMensaje: new Date().toISOString(),
-        mensajes: 1,
-        esVIP: false,
-        notas: "",
-        etapa: "nuevo",
-      };
-    } else {
-      perfilesClientes[telefono].ultimoMensaje = new Date().toISOString();
-      perfilesClientes[telefono].mensajes++;
-    }
+    conversaciones[telefono].push({
+      role: "assistant",
+      content: respuesta,
+      ts: new Date().toISOString(),
+    });
+    actualizarPerfil(telefono);
 
     return respuesta;
   } catch (err) {
@@ -179,20 +302,18 @@ async function llamarClaude(telefono, mensajeUsuario) {
 // ============================================================
 async function transcribirAudio(audioUrl) {
   try {
-    // Descargar audio desde WhatsApp
-    const audioRes = await fetch(audioUrl, {
+    const audioRes = await fetchConTimeout(audioUrl, {
       headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
     });
     const audioBuffer = await audioRes.arrayBuffer();
-    const audioBlob = new Blob([audioBuffer], { type: "audio/ogg" });
+    const audioBlob   = new Blob([audioBuffer], { type: "audio/ogg" });
 
-    // Enviar a OpenAI Whisper
     const formData = new FormData();
     formData.append("file", audioBlob, "audio.ogg");
     formData.append("model", "whisper-1");
     formData.append("language", "es");
 
-    const whisperRes = await fetch(
+    const whisperRes = await fetchConTimeout(
       "https://api.openai.com/v1/audio/transcriptions",
       {
         method: "POST",
@@ -213,8 +334,8 @@ async function transcribirAudio(audioUrl) {
 // WEBHOOK: Verificación Meta
 // ============================================================
 app.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
+  const mode      = req.query["hub.mode"];
+  const token     = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
   if (mode === "subscribe" && token === VERIFY_TOKEN) {
@@ -235,35 +356,48 @@ app.post("/webhook", async (req, res) => {
     const body = req.body;
     if (!body?.entry?.[0]?.changes?.[0]?.value?.messages) return;
 
-    const value = body.entry[0].changes[0].value;
-    const mensaje = value.messages[0];
-    const telefono = mensaje.from;
-    const tipo = mensaje.type;
+    const value   = body.entry[0].changes[0].value;
+    const mensajes = value.messages;
+    if (!Array.isArray(mensajes) || mensajes.length === 0) return;
 
-    // Si el bot está en pausa para este número, ignorar
+    const mensaje = mensajes[0];
+    // Validar que el teléfono es un string no vacío
+    if (!mensaje || typeof mensaje.from !== "string" || !mensaje.from) return;
+
+    const telefono = mensaje.from;
+    const tipo     = mensaje.type;
+
     if (modoPausa[telefono]) return;
+
+    // Rate limiting por teléfono
+    if (!checkRateLimit(telefono)) {
+      console.warn(`⚠️  Rate limit excedido para ${telefono}`);
+      return;
+    }
 
     let textoUsuario = "";
 
     if (tipo === "text") {
+      if (!mensaje.text || typeof mensaje.text.body !== "string") return;
       textoUsuario = mensaje.text.body;
+
     } else if (tipo === "image") {
-      // Analizar imagen con Claude Vision
       try {
-        const imageId = mensaje.image.id;
-        const mediaRes = await fetch(
+        if (!mensaje.image || !mensaje.image.id) throw new Error("imagen inválida");
+        const imageId  = mensaje.image.id;
+        const mediaRes = await fetchConTimeout(
           `https://graph.facebook.com/v18.0/${imageId}`,
           { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
         );
         const mediaData = await mediaRes.json();
-        const imageUrl = mediaData.url;
+        if (!mediaData.url) throw new Error("URL de imagen no disponible");
 
-        const imageDownload = await fetch(imageUrl, {
+        const imageDownload = await fetchConTimeout(mediaData.url, {
           headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
         });
         const imageBuffer = await imageDownload.arrayBuffer();
         const base64Image = Buffer.from(imageBuffer).toString("base64");
-        const mimeType = mensaje.image.mime_type || "image/jpeg";
+        const mimeType    = mensaje.image.mime_type || "image/jpeg";
 
         if (!conversaciones[telefono]) conversaciones[telefono] = [];
         conversaciones[telefono].push({
@@ -278,10 +412,11 @@ app.post("/webhook", async (req, res) => {
               text: "Analiza esta imagen. Si es una foto de piel o rostro, recomienda productos. Si es comprobante de pago, confírmalo.",
             },
           ],
+          ts: new Date().toISOString(),
         });
+        aplicarLimiteHistorial(telefono, 20);
 
-        // Llamar Claude con el historial que ya incluye la imagen
-        const res2 = await fetch("https://api.anthropic.com/v1/messages", {
+        const res2 = await fetchConTimeout("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: {
             "x-api-key": ANTHROPIC_API_KEY,
@@ -289,7 +424,7 @@ app.post("/webhook", async (req, res) => {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: "claude-opus-4-5",
+            model: "claude-opus-4-6",
             max_tokens: 1024,
             system: SYSTEM_PROMPT,
             messages: conversaciones[telefono].map(({ role, content }) => ({ role, content })),
@@ -297,19 +432,32 @@ app.post("/webhook", async (req, res) => {
         });
 
         const data2 = await res2.json();
-        const respuesta = data2.content[0].text;
-        conversaciones[telefono].push({ role: "assistant", content: respuesta });
-
-        if (!perfilesClientes[telefono]) {
-          perfilesClientes[telefono] = {
-            telefono, primerContacto: new Date().toISOString(),
-            ultimoMensaje: new Date().toISOString(), mensajes: 1,
-            esVIP: false, notas: "", etapa: "nuevo",
-          };
-        } else {
-          perfilesClientes[telefono].ultimoMensaje = new Date().toISOString();
-          perfilesClientes[telefono].mensajes++;
+        if (
+          !data2.content ||
+          !Array.isArray(data2.content) ||
+          data2.content.length === 0 ||
+          typeof data2.content[0].text !== "string"
+        ) {
+          throw new Error("Respuesta de Claude inválida");
         }
+        const respuesta = data2.content[0].text;
+
+        // Reemplazar imagen en historial por placeholder para liberar memoria
+        const lastIdx = conversaciones[telefono].length - 1;
+        if (Array.isArray(conversaciones[telefono][lastIdx]?.content)) {
+          conversaciones[telefono][lastIdx] = {
+            role: "user",
+            content: "[imagen analizada]",
+            ts: conversaciones[telefono][lastIdx].ts,
+          };
+        }
+
+        conversaciones[telefono].push({
+          role: "assistant",
+          content: respuesta,
+          ts: new Date().toISOString(),
+        });
+        actualizarPerfil(telefono);
 
         await enviarMensaje(telefono, respuesta);
         return;
@@ -317,22 +465,22 @@ app.post("/webhook", async (req, res) => {
         console.error("Error procesando imagen:", imgErr.message);
         textoUsuario = "[El cliente envió una imagen que no pude procesar]";
       }
+
     } else if (tipo === "audio") {
       if (OPENAI_API_KEY) {
         try {
-          const audioId = mensaje.audio.id;
-          const mediaRes = await fetch(
+          if (!mensaje.audio || !mensaje.audio.id) throw new Error("audio inválido");
+          const audioId  = mensaje.audio.id;
+          const mediaRes = await fetchConTimeout(
             `https://graph.facebook.com/v18.0/${audioId}`,
             { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
           );
-          const mediaData = await mediaRes.json();
-          const audioUrl = mediaData.url;
-          const transcripcion = await transcribirAudio(audioUrl);
-          if (transcripcion) {
-            textoUsuario = `[Audio transcrito]: ${transcripcion}`;
-          } else {
-            textoUsuario = "[El cliente envió un audio que no pude transcribir]";
-          }
+          const mediaData    = await mediaRes.json();
+          if (!mediaData.url) throw new Error("URL de audio no disponible");
+          const transcripcion = await transcribirAudio(mediaData.url);
+          textoUsuario = transcripcion
+            ? `[Audio transcrito]: ${transcripcion}`
+            : "[El cliente envió un audio que no pude transcribir]";
         } catch (audioErr) {
           console.error("Error audio:", audioErr.message);
           textoUsuario = "[El cliente envió un audio que no pude procesar]";
@@ -344,18 +492,24 @@ app.post("/webhook", async (req, res) => {
         );
         return;
       }
+
     } else if (tipo === "sticker") {
-      return; // Ignorar stickers
+      return;
     } else {
       textoUsuario = `[El cliente envió un mensaje de tipo: ${tipo}]`;
     }
 
     if (!textoUsuario) return;
 
-    // Detectar trolls
-    const palabrasOfensivas = ["idiota", "estupida", "tonta", "pendeja", "puta", "mierda"];
-    const esTroll = palabrasOfensivas.some((p) =>
-      textoUsuario.toLowerCase().includes(p)
+    // Detectar trolls (normaliza tildes para evitar evasión)
+    const palabrasOfensivas = [
+      "idiota","estupida","estúpida","tonta","pendeja","puta","mierda",
+      "imbecil","imbécil","cabrona","ojete","culera","pinche",
+    ];
+    const textoNorm = textoUsuario.toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const esTroll = palabrasOfensivas.some(p =>
+      textoNorm.includes(p.normalize("NFD").replace(/[\u0300-\u036f]/g, ""))
     );
     if (esTroll) {
       contadorTrolls[telefono] = (contadorTrolls[telefono] || 0) + 1;
@@ -374,7 +528,6 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
-    // Generar respuesta con Claude
     const respuesta = await llamarClaude(telefono, textoUsuario);
     await enviarMensaje(telefono, respuesta);
 
@@ -400,7 +553,7 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
 ───────────────────────────────────────── */
 :root {
   --c-base:    #0a0809;
-  --c-surface: #111019; /* slightly cool */
+  --c-surface: #111019;
   --c-raised:  #19181f;
   --c-overlay: #222030;
   --c-rim:     rgba(255,255,255,.055);
@@ -440,6 +593,37 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
 ::-webkit-scrollbar { width:3px; height:3px; }
 ::-webkit-scrollbar-track { background:transparent; }
 ::-webkit-scrollbar-thumb { background:var(--c-overlay); border-radius:2px; }
+
+/* ─────────────────────────────────────────
+   AUTH OVERLAY
+───────────────────────────────────────── */
+#auth-overlay {
+  position:fixed; inset:0; z-index:9999;
+  background:var(--c-base);
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:14px;
+}
+.auth-logo {
+  font-family:'Playfair Display',serif; font-style:italic;
+  font-size:28px; color:var(--c-gold); letter-spacing:.12em; margin-bottom:8px;
+}
+.auth-sub { font-size:11px; color:var(--c-text3); letter-spacing:.15em; text-transform:uppercase; margin-bottom:12px; }
+#token-input {
+  width:280px; background:var(--c-raised);
+  border:1px solid var(--c-rim2); border-radius:var(--r-sm);
+  padding:10px 14px; color:var(--c-text);
+  font-family:'DM Sans',sans-serif; font-size:13px; outline:none;
+  transition:border-color .18s;
+}
+#token-input:focus { border-color:rgba(200,171,110,.4); }
+#auth-btn {
+  width:280px; background:var(--c-gold); color:var(--c-base);
+  border:none; border-radius:var(--r-sm);
+  padding:10px 24px; font-size:13px; font-weight:500;
+  cursor:pointer; font-family:'DM Sans',sans-serif; transition:var(--transition);
+}
+#auth-btn:hover { background:var(--c-gold-lt); }
+#auth-error { color:var(--c-blush-lt); font-size:11.5px; display:none; }
 
 /* ─────────────────────────────────────────
    LAYOUT SHELL
@@ -791,7 +975,6 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
 ───────────────────────────────────────── */
 .an-view { flex:1; display:flex; flex-direction:column; overflow:hidden; }
 
-/* Top stats strip */
 .stats-strip {
   display:flex; border-bottom:1px solid var(--c-rim);
   background:var(--c-surface); flex-shrink:0;
@@ -815,7 +998,6 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
 .st-l { font-size:9.5px; color:var(--c-text3); text-transform:uppercase; letter-spacing:.15em; margin-top:4px; font-family:'DM Mono',monospace; }
 .st-d { font-size:11px; color:var(--c-mint); margin-top:3px; }
 
-/* Analytics scroll area */
 .an-body { flex:1; overflow-y:auto; padding:26px; }
 
 .an-h1 {
@@ -840,7 +1022,6 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
 }
 .an-card-t span { color:var(--c-gold); font-size:13px; font-family:'Playfair Display',serif; }
 
-/* ── Bar charts ── */
 .bar-chart {
   display:flex; gap:5px; align-items:flex-end;
   height:100px; position:relative;
@@ -866,7 +1047,6 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
 .bc-bar:hover .bc-bar-tip { opacity:1; }
 .bc-lbl { font-size:9px; color:var(--c-text3); font-family:'DM Mono',monospace; }
 
-/* ── Donut ── */
 .donut-wrap { display:flex; align-items:center; gap:18px; }
 .donut-legend { display:flex; flex-direction:column; gap:8px; flex:1; }
 .dl { display:flex; align-items:center; gap:8px; }
@@ -874,7 +1054,6 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
 .dl-name { font-size:11.5px; color:var(--c-text2); flex:1; }
 .dl-val { font-size:11.5px; color:var(--c-gold); font-weight:500; font-family:'DM Mono',monospace; }
 
-/* ── Funnel ── */
 .funnel { display:flex; flex-direction:column; gap:7px; }
 .fn { display:flex; align-items:center; gap:10px; }
 .fn-lbl { font-size:11px; color:var(--c-text3); width:120px; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -888,7 +1067,6 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
 }
 .fn-n { font-size:11px; color:var(--c-text3); width:28px; text-align:right; font-family:'DM Mono',monospace; }
 
-/* ── Hourly ── */
 .hourly-chart { display:flex; gap:4px; align-items:flex-end; height:70px; padding-bottom:18px; }
 .hc-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; }
 .hc-bar {
@@ -900,7 +1078,6 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
 .hc-bar.medium { background:rgba(200,171,110,.3); }
 .hc-lbl { font-size:8px; color:var(--c-text3); font-family:'DM Mono',monospace; }
 
-/* ── Product table ── */
 .ptable { width:100%; border-collapse:collapse; }
 .ptable th { font-family:'DM Mono',monospace; font-size:9px; letter-spacing:.15em; text-transform:uppercase; color:var(--c-text3); text-align:left; padding:6px 0; border-bottom:1px solid var(--c-rim); }
 .ptable td { font-size:12px; color:var(--c-text2); padding:9px 0; border-bottom:1px solid var(--c-rim); }
@@ -948,6 +1125,17 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
 </style>
 </head>
 <body>
+
+<!-- ══ AUTH OVERLAY ══ -->
+<div id="auth-overlay">
+  <div class="auth-logo">MIYU</div>
+  <div class="auth-sub">Centro de Operaciones</div>
+  <input id="token-input" type="password" placeholder="Token de acceso"
+    onkeydown="if(event.key==='Enter') doLogin()">
+  <button id="auth-btn" onclick="doLogin()">Acceder</button>
+  <div id="auth-error">Token incorrecto — inténtalo de nuevo</div>
+</div>
+
 <div class="shell">
 
   <!-- ══ ICON NAV ══ -->
@@ -1009,8 +1197,6 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
     <!-- ──────── VIEW: ANALYTICS ──────── -->
     <div class="view" id="view-analytics">
       <div class="an-view">
-
-        <!-- Stats strip -->
         <div class="stats-strip">
           <div class="stat-tile">
             <div class="st-n" id="s-activos">0</div>
@@ -1031,27 +1217,18 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
             <div class="st-d" style="color:var(--c-text3)">Integra Mercado Pago</div>
           </div>
         </div>
-
-        <!-- Charts grid -->
         <div class="an-body">
           <div class="an-h1">Análisis de Operaciones</div>
           <div class="an-sub">Datos en tiempo real · actualización cada 3 s</div>
-
           <div class="an-grid">
-
-            <!-- Mensajes 7 días -->
             <div class="an-card">
               <div class="an-card-t">Mensajes · últimos 7 días <span id="msgs7-total">—</span></div>
               <div class="bar-chart" id="chart-week"></div>
             </div>
-
-            <!-- Funnel -->
             <div class="an-card">
               <div class="an-card-t">Embudo de conversión</div>
               <div class="funnel" id="funnel"></div>
             </div>
-
-            <!-- Donut clientes -->
             <div class="an-card">
               <div class="an-card-t">Tipos de cliente</div>
               <div class="donut-wrap">
@@ -1059,8 +1236,6 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
                 <div class="donut-legend" id="donut-legend"></div>
               </div>
             </div>
-
-            <!-- Top productos -->
             <div class="an-card">
               <div class="an-card-t">Productos más consultados</div>
               <table class="ptable">
@@ -1068,13 +1243,10 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
                 <tbody id="prod-tbody"></tbody>
               </table>
             </div>
-
-            <!-- Actividad por hora -->
             <div class="an-card full">
               <div class="an-card-t">Actividad por hora del día <span>Hoy</span></div>
               <div class="hourly-chart" id="hourly-chart"></div>
             </div>
-
           </div>
         </div>
       </div>
@@ -1083,7 +1255,6 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
     <!-- ──────── VIEW: STOCK ──────── -->
     <div class="view" id="view-stock">
       <div class="inv-view">
-
         <div class="stats-strip">
           <div class="stat-tile">
             <div class="st-n">20</div>
@@ -1102,13 +1273,11 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
             <div class="st-l">Conecta para sincronizar</div>
           </div>
         </div>
-
         <div class="inv-body">
           <div class="an-h1">Inventario</div>
           <div class="an-sub">Stock en tiempo real · conecta Google Sheets para actualización automática</div>
           <div id="inv-table-wrap" style="margin-top:20px"></div>
         </div>
-
       </div>
     </div><!-- /view-stock -->
 
@@ -1116,6 +1285,66 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
 </div><!-- /shell -->
 
 <script>
+// ══════════════════════════════════════════════
+//  SEGURIDAD: escapeHtml para prevenir XSS
+// ══════════════════════════════════════════════
+function escapeHtml(s) {
+  if (typeof s !== 'string') s = String(s ?? '');
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// ══════════════════════════════════════════════
+//  AUTH
+// ══════════════════════════════════════════════
+let adminToken = sessionStorage.getItem('miyu_token') || '';
+let pollingInterval = null;
+
+function authHeaders() {
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer ' + adminToken,
+  };
+}
+
+async function doLogin() {
+  const inp = document.getElementById('token-input');
+  const err = document.getElementById('auth-error');
+  const btn = document.getElementById('auth-btn');
+  adminToken = (inp.value || '').trim();
+  btn.textContent = 'Verificando…';
+  btn.disabled = true;
+  err.style.display = 'none';
+  try {
+    const r = await fetch('/admin/chats', {
+      headers: { Authorization: 'Bearer ' + adminToken },
+    });
+    if (r.status === 401) {
+      err.style.display = 'block';
+      adminToken = '';
+    } else {
+      sessionStorage.setItem('miyu_token', adminToken);
+      document.getElementById('auth-overlay').style.display = 'none';
+      startApp();
+    }
+  } catch {
+    err.textContent = 'Error de conexión';
+    err.style.display = 'block';
+  }
+  btn.textContent = 'Acceder';
+  btn.disabled = false;
+}
+
+function startApp() {
+  fetchChats();
+  if (pollingInterval) clearInterval(pollingInterval);
+  pollingInterval = setInterval(fetchChats, 3000);
+}
+
 // ══════════════════════════════════════════════
 //  STATE
 // ══════════════════════════════════════════════
@@ -1149,8 +1378,20 @@ const STOCK = [
 // ══════════════════════════════════════════════
 async function fetchChats() {
   try {
-    const r = await fetch('/admin/chats');
-    const data = await r.json();
+    const r = await fetch('/admin/chats', { headers: authHeaders() });
+    if (r.status === 401) {
+      clearInterval(pollingInterval);
+      sessionStorage.removeItem('miyu_token');
+      document.getElementById('auth-overlay').style.display = 'flex';
+      return;
+    }
+    let data;
+    try {
+      data = await r.json();
+    } catch {
+      console.error('fetchChats: respuesta JSON inválida');
+      return;
+    }
     if (!data.ok || !data.chats) return;
     chats = data.chats.map(c => ({
       id:       c.telefono,
@@ -1187,18 +1428,13 @@ async function fetchChats() {
         }
       }
     }
-  } catch(e) { console.error('fetchChats error:', e); }
+  } catch(e) { console.error('fetchChats error:', e.message); }
 }
 
 function classTipo(c) {
   if (c.esVIP) return 'vip';
   if (c.mensajes > 10) return 'frecuente';
   return 'nuevo';
-}
-function preview(msgs) {
-  if (!msgs?.length) return 'Sin mensajes aún';
-  const t = msgs[msgs.length-1].content || '';
-  return t.substring(0,58) + (t.length > 58 ? '…' : '');
 }
 
 // ══════════════════════════════════════════════
@@ -1220,17 +1456,20 @@ function renderList() {
       Sin conversaciones activas<br>en este filtro 🌸</div>\`;
     return;
   }
+  // Usar data-id en lugar de onclick con interpolación para evitar XSS
   el.innerHTML = list.map((c,i) => \`
     <div class="chat-row \${c.id===activo?.id?'sel':''} \${!c.bot?'paused':''}"
-         onclick="selChat('\${c.id}')" style="animation-delay:\${i*.04}s">
+         data-id="\${escapeHtml(c.id)}"
+         onclick="selChat(this.dataset.id)"
+         style="animation-delay:\${i*.04}s">
       <div class="cr-head">
-        <div class="cr-name">\${c.nombre}</div>
+        <div class="cr-name">\${escapeHtml(c.nombre)}</div>
         <div class="cr-time">activo</div>
       </div>
-      <div class="cr-preview">\${c.preview}</div>
+      <div class="cr-preview">\${escapeHtml(c.preview)}</div>
       <div class="cr-tags">
         <span class="tag \${!c.bot?'tag-human':'tag-bot'}">\${!c.bot?'⚡ humano':'🤖 bot'}</span>
-        <span class="tag tag-\${c.tipo==='nuevo'?'nuevo':c.tipo==='frecuente'?'frec':'vip'}">\${c.tipo}</span>
+        <span class="tag tag-\${c.tipo==='nuevo'?'nuevo':c.tipo==='frecuente'?'frec':'vip'}">\${escapeHtml(c.tipo)}</span>
       </div>
     </div>\`).join('');
 }
@@ -1253,23 +1492,27 @@ function selChat(id) {
 function renderCenter() {
   if (!activo) return;
   const c = activo;
+  const safeId     = escapeHtml(c.id);
+  const safeNombre = escapeHtml(c.nombre);
+  const safeTel    = escapeHtml(c.tel);
+  const safeTipo   = escapeHtml(c.tipo);
   document.getElementById('center').innerHTML = \`
     <div class="topbar">
       <div class="tb-left">
-        <div class="tb-av">\${c.nombre.charAt(0).toUpperCase()}</div>
+        <div class="tb-av">\${escapeHtml(c.nombre.charAt(0).toUpperCase())}</div>
         <div>
-          <div class="tb-name">\${c.nombre}</div>
-          <div class="tb-phone">\${c.tel}</div>
+          <div class="tb-name">\${safeNombre}</div>
+          <div class="tb-phone">\${safeTel}</div>
         </div>
-        <span class="tag \${c.tipo==='vip'?'tag-vip':c.tipo==='frecuente'?'tag-frec':'tag-nuevo'}" style="margin-left:2px">\${c.tipo}</span>
+        <span class="tag \${c.tipo==='vip'?'tag-vip':c.tipo==='frecuente'?'tag-frec':'tag-nuevo'}" style="margin-left:2px">\${safeTipo}</span>
         <span class="tag \${c.bot?'tag-bot':'tag-human'}">\${c.bot?'🤖 bot':'⚡ control'}</span>
       </div>
       <div class="tb-right">
         \${c.bot
-          ? \`<button class="btn btn-blush" onclick="takeCtrl('\${c.id}')">⚡ Tomar Control</button>\`
-          : \`<button class="btn btn-mint"  onclick="releaseBot('\${c.id}')">🤖 Soltar Bot</button>\`}
-        <button class="btn btn-pay"  onclick="genLink('\${c.id}')">💳 Link de Pago</button>
-        <button class="btn btn-rim"  onclick="sendCat('\${c.id}')">📋 Catálogo</button>
+          ? \`<button class="btn btn-blush" data-id="\${safeId}" onclick="takeCtrl(this.dataset.id)">⚡ Tomar Control</button>\`
+          : \`<button class="btn btn-mint"  data-id="\${safeId}" onclick="releaseBot(this.dataset.id)">🤖 Soltar Bot</button>\`}
+        <button class="btn btn-pay"  data-id="\${safeId}" onclick="genLink(this.dataset.id)">💳 Link de Pago</button>
+        <button class="btn btn-rim"  data-id="\${safeId}" onclick="sendCat(this.dataset.id)">📋 Catálogo</button>
       </div>
     </div>
 
@@ -1277,10 +1520,10 @@ function renderCenter() {
       \${!c.msgs.length
         ? \`<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--c-text3);font-size:12px">Sin mensajes todavía</div>\`
         : c.msgs.map(m => \`
-          <div class="msg \${m.role}">
-            <div class="msg-who">\${m.role==='bot'?'✦ MIYU':m.role==='agent'?'⚡ GUADALUPE':c.nombre.toUpperCase()}</div>
-            <div class="bubble">\${m.txt}</div>
-            <div class="msg-ts">\${m.ts}</div>
+          <div class="msg \${escapeHtml(m.role)}">
+            <div class="msg-who">\${m.role==='bot'?'✦ MIYU':m.role==='agent'?'⚡ GUADALUPE':safeNombre.toUpperCase()}</div>
+            <div class="bubble">\${escapeHtml(m.txt)}</div>
+            <div class="msg-ts">\${escapeHtml(m.ts)}</div>
           </div>\`).join('')}
     </div>
 
@@ -1312,21 +1555,22 @@ function renderRP() {
   const el = document.getElementById('rp-body');
   if (!activo) { el.innerHTML=''; return; }
   const c = activo;
+  const safeId = escapeHtml(c.id);
   if (tabActual === 'perfil') {
     el.innerHTML = \`
       <div class="rp-section">
         <div class="rp-title">Identificación</div>
-        <div class="kv"><span class="kk">Teléfono</span><span class="vv" style="font-family:'DM Mono',monospace;font-size:11px">\${c.tel}</span></div>
-        <div class="kv"><span class="kk">Tipo</span><span class="vv vv-gold">\${c.tipo.toUpperCase()}</span></div>
-        <div class="kv"><span class="kk">Tipo de piel</span><span class="vv">\${c.perfil.tipoPiel||'—'}</span></div>
-        <div class="kv"><span class="kk">Tono</span><span class="vv">\${c.perfil.tono||'—'}</span></div>
+        <div class="kv"><span class="kk">Teléfono</span><span class="vv" style="font-family:'DM Mono',monospace;font-size:11px">\${escapeHtml(c.tel)}</span></div>
+        <div class="kv"><span class="kk">Tipo</span><span class="vv vv-gold">\${escapeHtml(c.tipo.toUpperCase())}</span></div>
+        <div class="kv"><span class="kk">Tipo de piel</span><span class="vv">\${escapeHtml(c.perfil.tipoPiel||'—')}</span></div>
+        <div class="kv"><span class="kk">Tono</span><span class="vv">\${escapeHtml(c.perfil.tono||'—')}</span></div>
       </div>
       <div class="rp-section">
         <div class="rp-title">Historial de compra</div>
-        <div class="kv"><span class="kk">Compras</span><span class="vv vv-gold">\${c.perfil.compras||0}</span></div>
+        <div class="kv"><span class="kk">Compras</span><span class="vv vv-gold">\${escapeHtml(String(c.perfil.compras||0))}</span></div>
         <div class="kv"><span class="kk">Mensajes</span><span class="vv">\${c.msgs.length}</span></div>
         <div class="kv"><span class="kk">Estado bot</span><span class="vv \${c.bot?'vv-gold':'vv-blush'}">\${c.bot?'Activo':'Pausado'}</span></div>
-        <div class="kv"><span class="kk">Carrito</span><span class="vv" style="font-size:11px;max-width:130px">\${c.carrito||'—'}</span></div>
+        <div class="kv"><span class="kk">Carrito</span><span class="vv" style="font-size:11px;max-width:130px">\${escapeHtml(c.carrito||'—')}</span></div>
       </div>
       <div class="rp-section">
         <div class="rp-title">Actividad reciente</div>
@@ -1339,7 +1583,7 @@ function renderRP() {
         <div class="rp-title">Inventario rápido</div>
         \${STOCK.slice(0,12).map(s=>\`
           <div class="stock-row">
-            <span class="sn">\${s.n}</span>
+            <span class="sn">\${escapeHtml(s.n)}</span>
             <span class="sq \${s.s}">\${s.s==='out'?'✕ Agotado':s.q+' pzs'}</span>
           </div>\`).join('')}
       </div>\`;
@@ -1347,11 +1591,11 @@ function renderRP() {
     el.innerHTML = \`
       <div class="rp-section">
         <div class="rp-title">Acciones rápidas</div>
-        <button class="action-btn" onclick="genLink('\${c.id}')">💳 Generar link de pago</button>
-        <button class="action-btn" onclick="sendCat('\${c.id}')">📋 Enviar catálogo</button>
-        <button class="action-btn" onclick="sendBank('\${c.id}')">🏦 Enviar datos bancarios</button>
-        <button class="action-btn" onclick="markVIP('\${c.id}')">★ Marcar como VIP</button>
-        <button class="action-btn danger" onclick="blockTroll('\${c.id}')">🚫 Bloquear troll</button>
+        <button class="action-btn" data-id="\${safeId}" onclick="genLink(this.dataset.id)">💳 Generar link de pago</button>
+        <button class="action-btn" data-id="\${safeId}" onclick="sendCat(this.dataset.id)">📋 Enviar catálogo</button>
+        <button class="action-btn" data-id="\${safeId}" onclick="sendBank(this.dataset.id)">🏦 Enviar datos bancarios</button>
+        <button class="action-btn" data-id="\${safeId}" onclick="markVIP(this.dataset.id)">★ Marcar como VIP</button>
+        <button class="action-btn danger" data-id="\${safeId}" onclick="blockTroll(this.dataset.id)">🚫 Bloquear troll</button>
       </div>
       <div class="rp-section">
         <div class="rp-title">Nota interna</div>
@@ -1384,8 +1628,6 @@ function drawSpark() {
 // ══════════════════════════════════════════════
 function buildAnalytics() {
   syncStats();
-
-  // — Week bars —
   const DAYS = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
   const wv   = [14, 9, 22, 17, 28, 38, 21];
   const wmax = Math.max(...wv);
@@ -1399,7 +1641,6 @@ function buildAnalytics() {
       <div class="bc-lbl">\${DAYS[i]}</div>
     </div>\`).join('');
 
-  // — Funnel —
   const FN = [
     {l:'Mensajes recibidos', v:100, c:'var(--c-gold)'},
     {l:'Mostraron interés',  v:68,  c:'var(--c-gold-lt)'},
@@ -1408,12 +1649,11 @@ function buildAnalytics() {
   ];
   document.getElementById('funnel').innerHTML = FN.map(f=>\`
     <div class="fn">
-      <div class="fn-lbl">\${f.l}</div>
+      <div class="fn-lbl">\${escapeHtml(f.l)}</div>
       <div class="fn-track"><div class="fn-fill" style="width:\${f.v}%;background:\${f.c}">\${f.v}%</div></div>
       <div class="fn-n">\${f.v}</div>
     </div>\`).join('');
 
-  // — Donut —
   const DN = [
     {l:'Nuevas',    v:44, c:'#c8ab6e'},
     {l:'Frecuentes',v:30, c:'#6daa8e'},
@@ -1422,7 +1662,6 @@ function buildAnalytics() {
   ];
   buildDonut(DN);
 
-  // — Top productos —
   const PRODS = [
     ['Set Anua 3 pasos','52'],
     ['Tirtir Red Cushion','41'],
@@ -1433,11 +1672,10 @@ function buildAnalytics() {
   document.getElementById('prod-tbody').innerHTML = PRODS.map((p,i)=>\`
     <tr>
       <td class="pt-rank">\${i+1}</td>
-      <td>\${p[0]}</td>
-      <td>\${p[1]}</td>
+      <td>\${escapeHtml(p[0])}</td>
+      <td>\${escapeHtml(p[1])}</td>
     </tr>\`).join('');
 
-  // — Hourly —
   const HV = Array.from({length:24},(_,h) => {
     if (h>=10&&h<=13) return 50+Math.random()*50;
     if (h>=18&&h<=22) return 70+Math.random()*60;
@@ -1473,7 +1711,7 @@ function buildDonut(data) {
   leg.innerHTML = data.map(d=>\`
     <div class="dl">
       <div class="dl-dot" style="background:\${d.c}"></div>
-      <span class="dl-name">\${d.l}</span>
+      <span class="dl-name">\${escapeHtml(d.l)}</span>
       <span class="dl-val">\${d.v}%</span>
     </div>\`).join('');
 }
@@ -1494,8 +1732,8 @@ function buildInventory() {
       <tbody>
         \${STOCK.map(s=>\`
           <tr>
-            <td>\${s.n}</td>
-            <td class="sku">\${s.sku}</td>
+            <td>\${escapeHtml(s.n)}</td>
+            <td class="sku">\${escapeHtml(s.sku)}</td>
             <td>$\${s.p}</td>
             <td class="qty-\${s.s}">\${s.q}</td>
             <td style="text-align:right"><span class="tag \${s.s==='ok'?'tag-nuevo':s.s==='low'?'tag-bot':'tag-human'}">\${s.s==='ok'?'OK':s.s==='low'?'BAJO':'AGOTADO'}</span></td>
@@ -1508,12 +1746,12 @@ function buildInventory() {
 //  ACTIONS
 // ══════════════════════════════════════════════
 async function takeCtrl(id) {
-  await fetch('/admin/pausar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({telefono:id})});
+  await fetch('/admin/pausar', { method:'POST', headers: authHeaders(), body: JSON.stringify({telefono:id}) });
   const c=chats.find(x=>x.id===id); if(c){c.bot=false;activo=c;}
   toast('⚡ Tomaste el control','t-blush'); renderList(); renderCenter(); renderRP();
 }
 async function releaseBot(id) {
-  await fetch('/admin/reactivar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({telefono:id})});
+  await fetch('/admin/reactivar', { method:'POST', headers: authHeaders(), body: JSON.stringify({telefono:id}) });
   const c=chats.find(x=>x.id===id); if(c){c.bot=true;activo=c;}
   toast('🤖 Bot reactivado','t-mint'); renderList(); renderCenter(); renderRP();
 }
@@ -1523,32 +1761,43 @@ async function send() {
   if (activo.bot) { toast('⚠ Toma control primero','t-blush'); return; }
   const txt=el.value.trim(); el.value='';
   const tel=activo.id;
-  const r=await fetch('/admin/enviar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({telefono:tel,mensaje:txt})});
-  const d=await r.json();
-  if(d.ok){
-    activo.msgs.push({role:'agent',txt,ts:'ahora'});
-    toast('✓ Mensaje enviado','t-mint'); renderCenter();
-  } else {
-    toast('⚠ Error al enviar: '+(d.error||''),'t-blush');
-  }
+  try {
+    const r = await fetch('/admin/enviar', { method:'POST', headers: authHeaders(), body: JSON.stringify({telefono:tel, mensaje:txt}) });
+    const d = await r.json();
+    if(d.ok){
+      activo.msgs.push({role:'agent', txt, ts:'ahora'});
+      toast('✓ Mensaje enviado','t-mint'); renderCenter();
+    } else {
+      toast('⚠ Error al enviar: '+(d.error||''),'t-blush');
+    }
+  } catch { toast('⚠ Error de conexión','t-blush'); }
 }
 async function genLink(id) {
-  const m=prompt('Monto del pedido (MXN):');
-  if (!m||isNaN(m)) return;
-  const r=await fetch('/admin/link-pago',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({telefono:id,monto:parseFloat(m),descripcion:'Pedido MIYU Beauty'})});
-  const d=await r.json();
+  const m = prompt('Monto del pedido (MXN):');
+  if (!m) return;
+  const monto = parseFloat(m);
+  if (isNaN(monto) || monto <= 0) { toast('⚠ Ingresa un monto válido mayor a 0','t-blush'); return; }
+  const r = await fetch('/admin/link-pago', { method:'POST', headers: authHeaders(), body: JSON.stringify({telefono:id, monto, descripcion:'Pedido MIYU Beauty'}) });
+  const d = await r.json();
   toast(d.ok?'💳 Link enviado al cliente':'⚠ Configura MP_ACCESS_TOKEN en Railway', d.ok?'t-gold':'t-blush');
 }
 async function sendCat(id) {
-  await fetch('/admin/enviar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({telefono:id,mensaje:'📋 Aquí tienes nuestro catálogo completo:\\nhttps://miyuuuu.tiiny.site/\\n\\n¿Algo que te llame la atención? 🌸'})});
+  await fetch('/admin/enviar', { method:'POST', headers: authHeaders(), body: JSON.stringify({telefono:id, mensaje:'📋 Aquí tienes nuestro catálogo completo:\\nhttps://miyuuuu.tiiny.site/\\n\\n¿Algo que te llame la atención? 🌸'}) });
   toast('📋 Catálogo enviado','t-gold');
 }
 async function sendBank(id) {
   const msg=\`💳 *Datos para transferencia MIYU Beauty:*\\n\\n🏦 Banco: STP\\n👤 Titular: Maria Guadalupe González Miranda\\n💳 Tarjeta: 5319 9500 1011 4248\\n🔢 CLABE: 646990404045356290\\n\\n⚠️ _Estas son nuestras ÚNICAS cuentas oficiales._\`;
-  await fetch('/admin/enviar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({telefono:id,mensaje:msg})});
+  await fetch('/admin/enviar', { method:'POST', headers: authHeaders(), body: JSON.stringify({telefono:id, mensaje:msg}) });
   toast('🏦 Datos bancarios enviados','t-gold');
 }
-function markVIP(id) { const c=chats.find(x=>x.id===id); if(c)c.tipo='vip'; toast('★ Marcado como VIP','t-gold'); renderList(); renderRP(); }
+async function markVIP(id) {
+  try {
+    await fetch('/admin/marcarVIP', { method:'POST', headers: authHeaders(), body: JSON.stringify({telefono:id}) });
+  } catch { /* no crítico */ }
+  const c=chats.find(x=>x.id===id);
+  if(c) c.tipo='vip';
+  toast('★ Marcado como VIP','t-gold'); renderList(); renderRP();
+}
 function blockTroll(id) { toast('🚫 Troll bloqueado (próximamente)','t-blush'); }
 
 // ══════════════════════════════════════════════
@@ -1583,7 +1832,8 @@ function syncStats() {
 }
 function toast(msg,cls) {
   const el=document.createElement('div');
-  el.className=\`toast \${cls}\`; el.textContent=msg;
+  el.className=\`toast \${cls}\`;
+  el.textContent=msg; // textContent, no innerHTML — evita XSS en mensajes de toast
   document.body.appendChild(el);
   setTimeout(()=>el.remove(),3000);
 }
@@ -1591,47 +1841,69 @@ function toast(msg,cls) {
 // ══════════════════════════════════════════════
 //  INIT
 // ══════════════════════════════════════════════
-fetchChats();
-setInterval(fetchChats, 3000);
+if (adminToken) {
+  // Verificar que el token almacenado sigue siendo válido
+  fetch('/admin/chats', { headers: { Authorization: 'Bearer ' + adminToken } })
+    .then(r => {
+      if (r.status === 401) {
+        sessionStorage.removeItem('miyu_token');
+        adminToken = '';
+        document.getElementById('auth-overlay').style.display = 'flex';
+      } else {
+        document.getElementById('auth-overlay').style.display = 'none';
+        startApp();
+      }
+    })
+    .catch(() => {
+      document.getElementById('auth-overlay').style.display = 'flex';
+    });
+} else {
+  document.getElementById('auth-overlay').style.display = 'flex';
+}
 </script>
 </body>
 </html>
 `;
 
+// ============================================================
+// RUTAS ADMIN (todas protegidas con adminAuth)
+// ============================================================
 app.get("/admin", (req, res) => {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(DASHBOARD_HTML);
 });
 
-// ============================================================
-// RUTAS ADMIN
-// ============================================================
-app.post("/admin/pausar", (req, res) => {
+app.post("/admin/pausar", adminAuth, (req, res) => {
   const { telefono } = req.body;
-  if (!telefono) return res.json({ ok: false, error: "Falta teléfono" });
+  if (!telefono || typeof telefono !== "string" || !telefono.trim())
+    return res.json({ ok: false, error: "Falta teléfono válido" });
   modoPausa[telefono] = true;
   console.log(`⏸️  Bot pausado para ${telefono}`);
   res.json({ ok: true, mensaje: `Bot pausado para ${telefono}` });
 });
 
-app.post("/admin/reactivar", (req, res) => {
+app.post("/admin/reactivar", adminAuth, (req, res) => {
   const { telefono } = req.body;
-  if (!telefono) return res.json({ ok: false, error: "Falta teléfono" });
+  if (!telefono || typeof telefono !== "string" || !telefono.trim())
+    return res.json({ ok: false, error: "Falta teléfono válido" });
   modoPausa[telefono] = false;
   console.log(`▶️  Bot reactivado para ${telefono}`);
   res.json({ ok: true, mensaje: `Bot reactivado para ${telefono}` });
 });
 
-app.post("/admin/enviar", async (req, res) => {
+app.post("/admin/enviar", adminAuth, async (req, res) => {
   const { telefono, mensaje } = req.body;
-  if (!telefono || !mensaje)
-    return res.json({ ok: false, error: "Faltan datos" });
+  if (!telefono || typeof telefono !== "string" || !telefono.trim())
+    return res.json({ ok: false, error: "Falta teléfono válido" });
+  if (!mensaje || typeof mensaje !== "string" || !mensaje.trim())
+    return res.json({ ok: false, error: "Falta mensaje válido" });
 
   try {
-    // Enviar mensaje limpio al cliente (sin prefijo)
-    await enviarMensaje(telefono, mensaje);
+    const resultado = await enviarMensaje(telefono, mensaje);
+    if (!resultado.ok) {
+      return res.json({ ok: false, error: resultado.error });
+    }
 
-    // Guardar en historial con prefijo solo internamente
     if (!conversaciones[telefono]) conversaciones[telefono] = [];
     conversaciones[telefono].push({
       role: "assistant",
@@ -1641,13 +1913,13 @@ app.post("/admin/enviar", async (req, res) => {
 
     res.json({ ok: true });
   } catch (err) {
-    res.json({ ok: false, error: err.message });
+    res.json({ ok: false, error: "Error interno al enviar mensaje" });
   }
 });
 
-app.get("/admin/chats", (req, res) => {
+app.get("/admin/chats", adminAuth, (req, res) => {
   const chats = Object.keys(conversaciones).map((tel) => {
-    const msgs = conversaciones[tel] || [];
+    const msgs   = conversaciones[tel] || [];
     const perfil = perfilesClientes[tel] || {};
     const ultimo = msgs[msgs.length - 1];
     const ultimoTexto =
@@ -1658,24 +1930,23 @@ app.get("/admin/chats", (req, res) => {
         : "[media]";
 
     return {
-      telefono: tel,
-      nombre: perfil.nombre || tel,
+      telefono:      tel,
+      nombre:        perfil.nombre || tel,
       ultimoMensaje: ultimoTexto.slice(0, 80),
-      hora: perfil.ultimoMensaje || new Date().toISOString(),
-      mensajes: msgs.length,
-      enPausa: modoPausa[tel] || false,
-      esVIP: perfil.esVIP || false,
-      etapa: perfil.etapa || "nuevo",
-      notas: perfil.notas || "",
-      historial: msgs.map((m) => ({
-        rol: m.role,
-        texto:
-          typeof m.content === "string"
-            ? m.content
-            : typeof m.content?.[0]?.text === "string"
-            ? m.content[0].text
-            : "[media]",
-        hora: m.ts || new Date().toISOString(),
+      hora:          perfil.ultimoMensaje || new Date().toISOString(),
+      mensajes:      msgs.length,
+      enPausa:       modoPausa[tel] || false,
+      esVIP:         perfil.esVIP || false,
+      etapa:         perfil.etapa || "nuevo",
+      notas:         perfil.notas || "",
+      historial:     msgs.map((m) => ({
+        rol:   m.role,
+        texto: typeof m.content === "string"
+          ? m.content
+          : typeof m.content?.[0]?.text === "string"
+          ? m.content[0].text
+          : "[media]",
+        hora:  m.ts || new Date().toISOString(),
       })),
     };
   });
@@ -1683,33 +1954,59 @@ app.get("/admin/chats", (req, res) => {
   res.json({ ok: true, chats, total: chats.length });
 });
 
-app.post("/admin/link-pago", async (req, res) => {
+app.post("/admin/marcarVIP", adminAuth, (req, res) => {
+  const { telefono } = req.body;
+  if (!telefono || typeof telefono !== "string" || !telefono.trim())
+    return res.json({ ok: false, error: "Falta teléfono válido" });
+  if (!perfilesClientes[telefono]) {
+    perfilesClientes[telefono] = {
+      telefono,
+      primerContacto: new Date().toISOString(),
+      ultimoMensaje: new Date().toISOString(),
+      mensajes: 0,
+      esVIP: true,
+      notas: "",
+      etapa: "nuevo",
+    };
+  } else {
+    perfilesClientes[telefono].esVIP = true;
+  }
+  console.log(`★ VIP marcado: ${telefono}`);
+  res.json({ ok: true });
+});
+
+app.post("/admin/link-pago", adminAuth, async (req, res) => {
   const { telefono, monto, descripcion } = req.body;
+  if (!telefono || typeof telefono !== "string")
+    return res.json({ ok: false, error: "Falta teléfono" });
+  if (!monto || typeof monto !== "number" || monto <= 0)
+    return res.json({ ok: false, error: "Monto inválido" });
+
   const token = process.env.MP_ACCESS_TOKEN;
   if (!token) return res.json({ ok: false, error: "MP_ACCESS_TOKEN no configurado" });
 
   try {
-    const mpRes = await fetch("https://api.mercadopago.com/checkout/preferences", {
+    const mpRes = await fetchConTimeout("https://api.mercadopago.com/checkout/preferences", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        items: [{ title: descripcion || "Pedido Miyu Beauty", quantity: 1, unit_price: monto || 100 }],
+        items: [{ title: descripcion || "Pedido Miyu Beauty", quantity: 1, unit_price: monto }],
         back_urls: { success: "https://miyuuuu.tiiny.site/" },
         auto_return: "approved",
       }),
     });
 
     const mpData = await mpRes.json();
-    const link = mpData.init_point;
+    const link   = mpData.init_point;
     if (link && telefono) {
       await enviarMensaje(telefono, `💳 Tu link de pago seguro:\n${link}\n\n_Válido por 30 minutos_`);
     }
     res.json({ ok: true, link });
   } catch (err) {
-    res.json({ ok: false, error: err.message });
+    res.json({ ok: false, error: "Error al generar link de pago" });
   }
 });
 
@@ -1717,7 +2014,7 @@ app.post("/admin/link-pago", async (req, res) => {
 // HEALTH CHECK
 // ============================================================
 app.get("/", (req, res) => {
-  res.send("🌸 Miyu Beauty Chatbot v2.1 activo");
+  res.send("🌸 Miyu Beauty Chatbot v2.2 activo");
 });
 
 // ============================================================
