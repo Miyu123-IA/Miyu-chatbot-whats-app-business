@@ -416,7 +416,7 @@ async function llamarClaude(telefono, mensajeUsuario) {
         system: SYSTEM_PROMPT,
         messages: conversaciones[telefono].map(({ role, content }) => ({ role, content })),
       }),
-    });
+    }, 40000); // 40 segundos — Claude puede tardar más de 15s
 
     const data = await res.json();
     if (!res.ok) {
