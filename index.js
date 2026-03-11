@@ -1151,20 +1151,22 @@ async function fetchChats() {
   try {
     const r = await fetch('/admin/chats');
     const data = await r.json();
-    chats = data.map(c => ({
+    if (!data.ok || !data.chats) return;
+    chats = data.chats.map(c => ({
       id:       c.telefono,
-      nombre:   c.perfil?.nombre || ('+' + c.telefono),
+      nombre:   c.nombre || ('+' + c.telefono),
       tel:      c.telefono,
       tipo:     classTipo(c),
-      bot:      !c.pausado,
-      msgs:     (c.mensajes || []).map(m => ({
-        role:  m.role === 'user' ? 'user' : (m.content?.startsWith('[Agente humano]') ? 'agent' : 'bot'),
-        txt:   (m.content || '').replace('[Agente humano]: ', ''),
-        ts:    'hoy'
+      bot:      !c.enPausa,
+      msgs:     (c.historial || []).map(m => ({
+        role:  m.rol === 'user' ? 'user' : (m.texto?.startsWith('[Agente humano]') ? 'agent' : 'bot'),
+        txt:   (m.texto || '').replace('[Agente humano]: ', ''),
+        ts:    m.hora || 'hoy'
       })),
-      perfil:   c.perfil || {},
-      carrito:  c.carrito || null,
-      preview:  preview(c.mensajes),
+      perfil:   { esVIP: c.esVIP, notas: c.notas, etapa: c.etapa },
+      carrito:  null,
+      preview:  c.ultimoMensaje || 'Sin mensajes aún',
+      mensajesCount: c.mensajes || 0,
     }));
     renderList();
     syncStats();
@@ -1172,12 +1174,12 @@ async function fetchChats() {
       const u = chats.find(x => x.id === activo.id);
       if (u && u.msgs.length !== activo.msgs.length) { activo = u; renderCenter(); }
     }
-  } catch(e) { /* servidor aún no disponible */ }
+  } catch(e) { console.error('fetchChats error:', e); }
 }
 
 function classTipo(c) {
-  if (c.perfil?.compras > 5) return 'vip';
-  if (c.perfil?.compras > 2) return 'frecuente';
+  if (c.esVIP) return 'vip';
+  if (c.mensajes > 10) return 'frecuente';
   return 'nuevo';
 }
 function preview(msgs) {
