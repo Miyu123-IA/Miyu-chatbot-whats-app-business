@@ -1,6 +1,6 @@
 "use strict";
-const express  = require("express");
-const FormData = require("form-data");
+const express = require("express");
+// FormData y Blob son built-in en Node.js 18+ — no se importan
 const app = express();
 
 // ============================================================
@@ -356,17 +356,17 @@ async function enviarMensaje(telefono, texto) {
 // ============================================================
 async function subirMediaWA(buffer, mimeType, filename) {
   try {
-    const fd = new FormData();
+    // Usar FormData y Blob nativos de Node.js 18+ (compatibles con fetch nativo)
+    const blob = new Blob([buffer], { type: mimeType });
+    const fd   = new FormData();
     fd.append("messaging_product", "whatsapp");
-    fd.append("file", buffer, { filename: filename || "photo.jpg", contentType: mimeType });
+    fd.append("file", blob, filename || "photo.jpg");
+    // NO poner Content-Type — fetch lo genera solo con el boundary del multipart
     const res = await fetchConTimeout(
       `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/media`,
       {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-          ...fd.getHeaders(),
-        },
+        headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
         body: fd,
       },
       30000
@@ -374,10 +374,13 @@ async function subirMediaWA(buffer, mimeType, filename) {
     const data = await res.json();
     if (!res.ok) {
       const errMsg = data?.error?.message || JSON.stringify(data).slice(0, 200);
+      console.error("subirMediaWA error:", errMsg);
       return { ok: false, error: errMsg };
     }
+    console.log("subirMediaWA OK, mediaId:", data.id);
     return { ok: true, mediaId: data.id };
   } catch (err) {
+    console.error("subirMediaWA exception:", err.message);
     return { ok: false, error: err.message };
   }
 }
