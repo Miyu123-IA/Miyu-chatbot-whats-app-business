@@ -13,6 +13,8 @@ const PHONE_NUMBER_ID   = process.env.PHONE_NUMBER_ID;
 const OPENAI_API_KEY    = process.env.OPENAI_API_KEY || null;
 const PORT              = process.env.PORT || 3000;
 const ADMIN_TOKEN       = process.env.ADMIN_TOKEN || "miyu-admin-2026";
+const SUPABASE_URL      = process.env.SUPABASE_URL || null;
+const SUPABASE_KEY      = process.env.SUPABASE_KEY || null;
 
 // Validar variables críticas al arranque (warnings, no crash)
 const missingVars = [];
@@ -56,6 +58,136 @@ const perfilesClientes = {};  // perfil por teléfono
 const contadorTrolls   = {};  // contador mensajes ofensivos
 const modoPausa        = {};  // true = humano en control
 const rateLimiter      = {};  // timestamps de mensajes por teléfono
+
+// ============================================================
+// SUPABASE — REST API helpers (sin SDK, solo fetch nativo)
+// ============================================================
+const SB_HEADERS = () => SUPABASE_URL && SUPABASE_KEY ? {
+  "Content-Type":  "application/json",
+  "apikey":        SUPABASE_KEY,
+  "Authorization": `Bearer ${SUPABASE_KEY}`,
+  "Prefer":        "return=minimal",
+} : null;
+
+/** Leer filas de una tabla. filter = objeto { col: valor } */
+async function sbSelect(tabla, filter = {}) {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return [];
+  try {
+    const params = Object.entries(filter)
+      .map(([k, v]) => `${encodeURIComponent(k)}=eq.${encodeURIComponent(v)}`).join("&");
+    const url = `${SUPABASE_URL}/rest/v1/${tabla}${params ? "?" + params : ""}`;
+    const r = await fetch(url, { headers: { ...SB_HEADERS(), Prefer: "return=representation" } });
+    if (!r.ok) return [];
+    return await r.json();
+  } catch { return []; }
+}
+
+/** Insertar o actualizar (upsert) una fila */
+async function sbUpsert(tabla, row) {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return;
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/${tabla}`, {
+      method:  "POST",
+      headers: { ...SB_HEADERS(), Prefer: "resolution=merge-duplicates,return=minimal" },
+      body:    JSON.stringify(row),
+    });
+  } catch (e) { console.error(`sbUpsert ${tabla}:`, e.message); }
+}
+
+/** Eliminar filas por filtro */
+async function sbDelete(tabla, filter = {}) {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return;
+  try {
+    const params = Object.entries(filter)
+      .map(([k, v]) => `${encodeURIComponent(k)}=eq.${encodeURIComponent(v)}`).join("&");
+    await fetch(`${SUPABASE_URL}/rest/v1/${tabla}?${params}`, {
+      method: "DELETE", headers: SB_HEADERS(),
+    });
+  } catch (e) { console.error(`sbDelete ${tabla}:`, e.message); }
+}
+
+// ── Savers (fire & forget — no bloquean al bot) ────────────
+function guardarConversacion(telefono) {
+  if (!conversaciones[telefono]) return;
+  sbUpsert("conversaciones", {
+    telefono,
+    mensajes:        conversaciones[telefono],
+    actualizado_en:  new Date().toISOString(),
+  });
+}
+
+function guardarPerfil(telefono) {
+  if (!perfilesClientes[telefono]) return;
+  sbUpsert("perfiles", {
+    telefono,
+    datos:           perfilesClientes[telefono],
+    actualizado_en:  new Date().toISOString(),
+  });
+}
+
+function guardarPedido(pedidoId) {
+  if (!pedidos[pedidoId]) return;
+  sbUpsert("pedidos_db", {
+    id:              pedidoId,
+    datos:           pedidos[pedidoId],
+    estado:          pedidos[pedidoId].estado,
+    telefono:        pedidos[pedidoId].telefono,
+    actualizado_en:  new Date().toISOString(),
+  });
+}
+
+function guardarLead(telefono) {
+  if (!leadScores[telefono]) return;
+  sbUpsert("leads", {
+    telefono,
+    score:           leadScores[telefono].score,
+    etapa:           leadScores[telefono].etapa,
+    datos:           leadScores[telefono],
+    actualizado_en:  new Date().toISOString(),
+  });
+}
+
+/** Carga todos los datos persistidos desde Supabase al arrancar */
+async function cargarDesdeSupabase() {
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    console.log("⚠️  Supabase no configurado — modo solo memoria");
+    return;
+  }
+  console.log("🗄️  Cargando datos desde Supabase…");
+  try {
+    // Conversaciones
+    const convRows = await sbSelect("conversaciones");
+    for (const row of convRows) {
+      if (row.telefono && Array.isArray(row.mensajes)) {
+        conversaciones[row.telefono] = row.mensajes;
+      }
+    }
+    // Perfiles
+    const perfRows = await sbSelect("perfiles");
+    for (const row of perfRows) {
+      if (row.telefono && row.datos) {
+        perfilesClientes[row.telefono] = row.datos;
+      }
+    }
+    // Pedidos
+    const pedRows = await sbSelect("pedidos_db");
+    for (const row of pedRows) {
+      if (row.id && row.datos) {
+        pedidos[row.id] = row.datos;
+      }
+    }
+    // Leads
+    const leadRows = await sbSelect("leads");
+    for (const row of leadRows) {
+      if (row.telefono && row.datos) {
+        leadScores[row.telefono] = row.datos;
+      }
+    }
+    console.log(`✅ Supabase: ${convRows.length} convs, ${perfRows.length} perfiles, ${pedRows.length} pedidos, ${leadRows.length} leads cargados`);
+  } catch (e) {
+    console.error("❌ Error cargando desde Supabase:", e.message);
+  }
+}
 
 // ── INVENTARIO ──────────────────────────────────────────────
 const inventario = {
@@ -125,6 +257,10 @@ setInterval(() => {
       delete rateLimiter[tel];
       delete leadScores[tel];
       delete seguimientosAuto[tel];
+      // Borrar de Supabase también (fire & forget)
+      sbDelete("conversaciones", { telefono: tel });
+      sbDelete("perfiles",       { telefono: tel });
+      sbDelete("leads",          { telefono: tel });
       console.log(`🧹 Conversación inactiva limpiada: ${tel}`);
     }
   }
@@ -515,6 +651,8 @@ async function llamarClaude(telefono, mensajeUsuario) {
       ts: new Date().toISOString(),
     });
     actualizarPerfil(telefono);
+    guardarConversacion(telefono);
+    guardarPerfil(telefono);
 
     return respuesta;
   } catch (err) {
@@ -634,6 +772,9 @@ function actualizarLeadScore(telefono, texto) {
       else if (ld.score >= 50) perfilesClientes[telefono].etapa = "caliente";
       else if (ld.score >= 20) perfilesClientes[telefono].etapa = "tibio";
     }
+
+    guardarLead(telefono);
+    guardarPerfil(telefono);
   }
 }
 
@@ -667,6 +808,7 @@ function crearPedido({ telefono, productos, total, metodoPago, notas, direccion 
   metricas.pedidosHoy++;
   metricas.pedidosPorEstado.pendiente++;
   console.log(`📦 Nuevo pedido creado: ${id} para ${telefono}`);
+  guardarPedido(id);
   return pedidos[id];
 }
 
@@ -713,6 +855,9 @@ async function actualizarEstadoPedido(pedidoId, nuevoEstado, notas) {
 
   // Programar seguimiento post-entrega
   if (nuevoEstado === "entregado") programarSeguimiento(p.telefono, "postventa", 72);
+
+  guardarPedido(pedidoId);
+  if (p.telefono) guardarConversacion(p.telefono);
 
   return { ok:true, pedido:p };
 }
@@ -820,6 +965,7 @@ app.post("/webhook", async (req, res) => {
       if (tipo === "text" && mensaje.text && typeof mensaje.text.body === "string") {
         if (!conversaciones[telefono]) conversaciones[telefono] = [];
         conversaciones[telefono].push({ role:"user", content:mensaje.text.body, ts:new Date().toISOString() });
+        guardarConversacion(telefono);
         // Lead scoring incluso en modo humano
         actualizarLeadScore(telefono, mensaje.text.body);
         // Si respondió → cancelar seguimientos pendientes
@@ -920,6 +1066,8 @@ app.post("/webhook", async (req, res) => {
           ts: new Date().toISOString(),
         });
         actualizarPerfil(telefono);
+        guardarConversacion(telefono);
+        guardarPerfil(telefono);
 
         await enviarRespuestaBot(telefono, respuesta);
         return;
@@ -3064,6 +3212,7 @@ app.post("/admin/enviar", adminAuth, async (req, res) => {
       content: `[Agente humano]: ${mensaje}`,
       ts: new Date().toISOString(),
     });
+    guardarConversacion(telefono);
 
     res.json({ ok: true });
   } catch (err) {
@@ -3103,6 +3252,7 @@ app.post("/admin/enviar-imagen", adminAuth, async (req, res) => {
       content: `[Agente humano]: 📷 ${caption || "Imagen enviada"}`,
       ts: new Date().toISOString(),
     });
+    guardarConversacion(telefono);
     res.json({ ok: true });
   } catch (err) {
     console.error("Error /admin/enviar-imagen:", err.message);
@@ -3261,6 +3411,7 @@ app.post("/admin/pedidos", adminAuth, async (req, res) => {
   const p = crearPedido({ telefono, productos, total, metodoPago, notas, direccion });
   // Notificar al cliente
   await enviarMensaje(telefono, `🌸 *¡Hola! Tu pedido ${p.id} ha sido registrado.*\n\nTotal: $${total}\nEstado: Pendiente de confirmación\n\nTe avisamos en cuanto lo confirmemos 💖`);
+  guardarPedido(p.id);
   res.json({ ok:true, pedido:p });
 });
 
@@ -3398,4 +3549,7 @@ app.get("/", (req, res) => {
 // ============================================================
 // INICIAR SERVIDOR
 // ============================================================
-app.listen(PORT, () => console.log(`🚀 Servidor en puerto ${PORT}`));
+app.listen(PORT, async () => {
+  console.log(`🚀 Servidor en puerto ${PORT}`);
+  await cargarDesdeSupabase();
+});
