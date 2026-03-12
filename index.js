@@ -58,6 +58,7 @@ const perfilesClientes = {};  // perfil por teléfono
 const contadorTrolls   = {};  // contador mensajes ofensivos
 const modoPausa        = {};  // true = humano en control
 const rateLimiter      = {};  // timestamps de mensajes por teléfono
+const imagenesEnviadas = {};  // { telefono: Set<productoId> } — evita reenviar la misma foto
 
 // ============================================================
 // SUPABASE — REST API helpers (sin SDK, solo fetch nativo)
@@ -257,6 +258,7 @@ setInterval(() => {
       delete rateLimiter[tel];
       delete leadScores[tel];
       delete seguimientosAuto[tel];
+      delete imagenesEnviadas[tel];
       // Borrar de Supabase también (fire & forget)
       sbDelete("conversaciones", { telefono: tel });
       sbDelete("perfiles",       { telefono: tel });
@@ -943,41 +945,54 @@ function _productosConImagenEnTexto(texto, max = 2) {
  * Solo manda imágenes en 3 escenarios:
  *   1. Cliente pidió foto explícitamente
  *   2. Cliente indeciso entre dos productos
- *   3. Alto interés — mismo producto aparece 3+ veces en el historial
+ *   3. Alto interés — mismo producto aparece 3+ veces en mensajes PREVIOS
+ * Nunca reenvía una foto ya enviada en la misma conversación.
  * Devuelve array de hasta 2 product IDs (vacío = no mandar nada).
  */
 function debeEnviarImagenes(telefono, textoUsuario, respuestaBot) {
   const msgLow  = (textoUsuario || "").toLowerCase();
   const respLow = (respuestaBot  || "").toLowerCase();
 
+  // Ya enviadas en esta conversación → no repetir
+  const yaEnviadas = imagenesEnviadas[telefono] || new Set();
+
+  /** Filtra una lista de pids quitando los ya enviados */
+  const filtrar = pids => pids.filter(pid => !yaEnviadas.has(pid));
+
   // ── Escenario 1: cliente pide foto ──────────────────────────
   const pidioFoto = /\bfoto\b|imagen|muéstrame|muestrame|cómo se ve|como se ve|ver el|ver la|mándame|mandame|me puedes mostrar|tienes foto/.test(msgLow);
   if (pidioFoto) {
-    // Priorizar productos en el mensaje del cliente; si no, en la respuesta
-    const pids = _productosConImagenEnTexto(msgLow) || _productosConImagenEnTexto(respLow);
-    if (pids.length > 0) return pids;
+    // Buscar primero en el mensaje del cliente, luego en la respuesta del bot
+    let pids = _productosConImagenEnTexto(msgLow);
+    if (pids.length === 0) pids = _productosConImagenEnTexto(respLow);
+    const filtrados = filtrar(pids);
+    if (filtrados.length > 0) return filtrados;
   }
 
   // ── Escenario 2: indecisión entre productos ──────────────────
   const hayIndecision = /no sé|no se|cuál es mejor|cual es mejor|\bentre\b|o el |o la |cuál me recomiendas|cual me recomiendas|me decides|qué diferencia|que diferencia/.test(msgLow);
   if (hayIndecision) {
-    const pids = _productosConImagenEnTexto(msgLow + " " + respLow, 2);
-    if (pids.length >= 2) return pids;   // solo si hay 2 productos para comparar
+    const pids     = _productosConImagenEnTexto(msgLow + " " + respLow, 2);
+    const filtrados = filtrar(pids);
+    if (filtrados.length >= 2) return filtrados;  // solo si hay 2 para comparar
   }
 
-  // ── Escenario 3: alto interés (producto mencionado 3+ veces) ─
+  // ── Escenario 3: alto interés ────────────────────────────────
+  // Contar solo en mensajes PREVIOS (excluir el mensaje actual para evitar
+  // que se dispare en cada respuesta una vez superado el umbral)
   const historial = conversaciones[telefono] || [];
-  // Solo mensajes del usuario en los últimos 20
-  const textoHistorial = historial
+  const mensajesPrevios = historial
     .filter(m => m.role === "user")
+    .slice(0, -1)          // ← excluir el mensaje actual (ya está en historial)
     .slice(-20)
     .map(m => (typeof m.content === "string" ? m.content : ""))
     .join(" ")
     .toLowerCase();
 
   for (const [termino, pid] of Object.entries(NOMBRES_PRODUCTOS)) {
+    if (yaEnviadas.has(pid)) continue;  // ya se mandó → skip
     const regex  = new RegExp(termino.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
-    const conteo = (textoHistorial.match(regex) || []).length;
+    const conteo = (mensajesPrevios.match(regex) || []).length;
     if (conteo >= 3) {
       const prod = inventario[pid];
       if (prod && prod.activo && (prod.imagenBase64 || prod.imagenUrl)) {
@@ -1268,12 +1283,14 @@ app.post("/webhook", async (req, res) => {
     const pidsImg = debeEnviarImagenes(telefono, textoUsuario, respuesta);
     if (pidsImg.length > 0) {
       await sleep(1200);
+      if (!imagenesEnviadas[telefono]) imagenesEnviadas[telefono] = new Set();
       for (let i = 0; i < pidsImg.length; i++) {
         const img = await obtenerImagenParaWA(pidsImg[i]);
         if (img) {
           const caption = inventario[pidsImg[i]]?.nombre || "";
           if (img.mediaId) await enviarImagen(telefono, { mediaId: img.mediaId, caption });
-          else if (img.url) await enviarImagen(telefono, { url: img.url, caption });
+          else if (img.url)  await enviarImagen(telefono, { url: img.url, caption });
+          imagenesEnviadas[telefono].add(pidsImg[i]);  // marcar como enviada
           if (i < pidsImg.length - 1) await sleep(800);
         }
       }
