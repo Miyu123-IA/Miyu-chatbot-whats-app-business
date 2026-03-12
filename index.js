@@ -919,6 +919,67 @@ function generarCotizacion(items) {
 }
 
 // ============================================================
+// IMÁGENES DE PRODUCTOS: detección y envío automático
+// ============================================================
+
+/**
+ * Detecta hasta 2 productos con imagen mencionados en el texto de Claude.
+ * Reutiliza NOMBRES_PRODUCTOS para el matching de keywords.
+ */
+function detectarProductosMencionados(texto) {
+  const textoLow = texto.toLowerCase();
+  const encontrados = [];
+  for (const [termino, pid] of Object.entries(NOMBRES_PRODUCTOS)) {
+    if (textoLow.includes(termino)) {
+      if (!encontrados.includes(pid)) {
+        const prod = inventario[pid];
+        if (prod && prod.activo && (prod.imagenBase64 || prod.imagenUrl)) {
+          encontrados.push(pid);
+          if (encontrados.length >= 2) break;
+        }
+      }
+    }
+  }
+  return encontrados;
+}
+
+/**
+ * Devuelve { mediaId } o { url } listos para enviarImagen().
+ * Cachea el mediaId de WhatsApp 29 días para no re-subir cada vez.
+ */
+async function obtenerImagenParaWA(productoId) {
+  const prod = inventario[productoId];
+  if (!prod) return null;
+
+  // 1) mediaId cacheado y vigente
+  if (prod.waMediaId && prod.waMediaExpiry && Date.now() < prod.waMediaExpiry) {
+    return { mediaId: prod.waMediaId };
+  }
+
+  // 2) Tenemos base64 → subir a WhatsApp y cachear
+  if (prod.imagenBase64) {
+    try {
+      const buffer = Buffer.from(prod.imagenBase64, "base64");
+      const upload = await subirMediaWA(buffer, "image/jpeg", "producto.jpg");
+      if (upload.ok) {
+        prod.waMediaId    = upload.mediaId;
+        prod.waMediaExpiry = Date.now() + 29 * 24 * 60 * 60 * 1000; // 29 días
+        return { mediaId: prod.waMediaId };
+      }
+    } catch (e) {
+      console.error(`obtenerImagenParaWA base64 error [${productoId}]:`, e.message);
+    }
+  }
+
+  // 3) imagenUrl pública (fallback)
+  if (prod.imagenUrl && prod.imagenUrl.trim()) {
+    return { url: prod.imagenUrl.trim() };
+  }
+
+  return null;
+}
+
+// ============================================================
 // WEBHOOK: Verificación Meta
 // ============================================================
 app.get("/webhook", (req, res) => {
@@ -1070,6 +1131,22 @@ app.post("/webhook", async (req, res) => {
         guardarPerfil(telefono);
 
         await enviarRespuestaBot(telefono, respuesta);
+
+        // Enviar fotos de productos mencionados en la respuesta
+        const pidsImgAn = detectarProductosMencionados(respuesta);
+        if (pidsImgAn.length > 0) {
+          await sleep(1200);
+          for (let i = 0; i < pidsImgAn.length; i++) {
+            const img = await obtenerImagenParaWA(pidsImgAn[i]);
+            if (img) {
+              const caption = inventario[pidsImgAn[i]]?.nombre || "";
+              if (img.mediaId) await enviarImagen(telefono, { mediaId: img.mediaId, caption });
+              else if (img.url) await enviarImagen(telefono, { url: img.url, caption });
+              if (i < pidsImgAn.length - 1) await sleep(800);
+            }
+          }
+        }
+
         return;
       } catch (imgErr) {
         console.error("Error procesando imagen:", imgErr.message);
@@ -1140,6 +1217,21 @@ app.post("/webhook", async (req, res) => {
 
     const respuesta = await llamarClaude(telefono, textoUsuario);
     await enviarRespuestaBot(telefono, respuesta);
+
+    // Enviar fotos de productos mencionados por el bot
+    const pidsImg = detectarProductosMencionados(respuesta);
+    if (pidsImg.length > 0) {
+      await sleep(1200);
+      for (let i = 0; i < pidsImg.length; i++) {
+        const img = await obtenerImagenParaWA(pidsImg[i]);
+        if (img) {
+          const caption = inventario[pidsImg[i]]?.nombre || "";
+          if (img.mediaId) await enviarImagen(telefono, { mediaId: img.mediaId, caption });
+          else if (img.url) await enviarImagen(telefono, { url: img.url, caption });
+          if (i < pidsImg.length - 1) await sleep(800);
+        }
+      }
+    }
 
   } catch (err) {
     console.error("Error en webhook:", err.message);
@@ -2817,7 +2909,7 @@ function buildInventory() {
   document.getElementById('inv-table-wrap').innerHTML = \`
     <table class="inv-table">
       <thead><tr>
-        <th>Producto</th><th>Categoría</th><th>Precio</th>
+        <th>Foto</th><th>Producto</th><th>Categoría</th><th>Precio</th>
         <th>Stock</th><th>Estado</th><th>Activo</th>
       </tr></thead>
       <tbody>
@@ -2825,7 +2917,17 @@ function buildInventory() {
           const est = p.estado || 'ok';
           const tagCls = est==='ok'?'tag-nuevo':est==='bajo'?'tag-bot':'tag-human';
           const estLabel = est==='ok'?'OK':est==='bajo'?'BAJO':'AGOTADO';
+          const thumbHtml = p.tieneImagen
+            ? \`<img src="/admin/inventario/\${encodeURIComponent(p.id)}/imagen-thumb" alt="" style="width:36px;height:36px;object-fit:cover;border-radius:6px;display:block;">\`
+            : \`<span style="font-size:20px;line-height:36px;">📷</span>\`;
           return \`<tr>
+            <td style="text-align:center;width:48px">
+              <label style="cursor:pointer;display:inline-block;width:36px;height:36px;" title="Subir foto">
+                \${thumbHtml}
+                <input type="file" accept="image/*" style="display:none"
+                  onchange="uploadProductImg('\${escapeHtml(p.id)}', this.files[0])">
+              </label>
+            </td>
             <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="\${escapeHtml(p.nombre)}">\${escapeHtml(p.nombre)}</td>
             <td style="font-size:10px;color:var(--c-text3)">\${escapeHtml(p.categoria||'')}</td>
             <td>$\${p.precio}</td>
@@ -2844,6 +2946,35 @@ function buildInventory() {
         }).join('')}
       </tbody>
     </table>\`;
+}
+
+async function uploadProductImg(id, file) {
+  if (!file) return;
+  toast('📤 Subiendo foto…', 't-gold');
+  try {
+    // Corregir orientación EXIF y comprimir (reutiliza fixImgOrientation existente)
+    const blob = await fixImgOrientation(file);
+    const b64  = await new Promise(res => {
+      const reader = new FileReader();
+      reader.onload = e => res(e.target.result.split(',')[1]);
+      reader.readAsDataURL(blob);
+    });
+    const r = await fetch(\`/admin/inventario/\${encodeURIComponent(id)}/imagen\`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ base64: b64, mimeType: 'image/jpeg' })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      toast('✅ Foto guardada — el bot ya la puede enviar', 't-mint');
+      await fetchInventario();
+      buildInventory();
+    } else {
+      toast('⚠ ' + (d.error || 'Error subiendo foto'), 't-blush');
+    }
+  } catch (e) {
+    toast('⚠ Error: ' + e.message, 't-blush');
+  }
 }
 
 async function saveStock(id) {
@@ -3359,11 +3490,23 @@ app.post("/admin/link-pago", adminAuth, async (req, res) => {
 app.get("/admin/inventario", adminAuth, (req, res) => {
   const lista = Object.values(inventario).map(p => ({
     ...p,
-    estado: p.stock === 0 ? "agotado" : p.stock <= p.stockMinimo ? "bajo" : "ok",
+    imagenBase64: undefined,   // no enviar base64 al dashboard (pesado)
+    estado:       p.stock === 0 ? "agotado" : p.stock <= p.stockMinimo ? "bajo" : "ok",
+    tieneImagen:  !!(p.imagenBase64 || p.imagenUrl),
   }));
   const bajoStock  = lista.filter(p => p.stock > 0 && p.stock <= p.stockMinimo).length;
   const agotados   = lista.filter(p => p.stock === 0).length;
   res.json({ ok:true, productos:lista, total:lista.length, bajoStock, agotados });
+});
+
+// ── Thumbnail de producto para el dashboard ─────────────────
+app.get("/admin/inventario/:id/imagen-thumb", adminAuth, (req, res) => {
+  const prod = inventario[req.params.id];
+  if (!prod || !prod.imagenBase64) return res.status(404).end();
+  const buf = Buffer.from(prod.imagenBase64, "base64");
+  res.setHeader("Content-Type", "image/jpeg");
+  res.setHeader("Cache-Control", "private, max-age=3600");
+  res.send(buf);
 });
 
 app.put("/admin/inventario/:id", adminAuth, (req, res) => {
@@ -3377,6 +3520,45 @@ app.put("/admin/inventario/:id", adminAuth, (req, res) => {
   if (typeof imagenUrl === "string")                   inventario[id].imagenUrl  = imagenUrl.trim();
   console.log(`📦 Inventario actualizado: ${id}`);
   res.json({ ok:true, producto:inventario[id] });
+});
+
+// ── Subir/actualizar foto de producto ──────────────────────
+app.post("/admin/inventario/:id/imagen", adminAuth, async (req, res) => {
+  const { id } = req.params;
+  if (!inventario[id]) return res.json({ ok:false, error:"Producto no encontrado" });
+
+  const { base64, mimeType } = req.body;
+  if (!base64 || typeof base64 !== "string")
+    return res.json({ ok:false, error:"Falta base64 de la imagen" });
+
+  // Limpiar prefijo data URL si viene del cliente
+  const cleanB64 = base64.replace(/^data:image\/[a-z]+;base64,/, "");
+  if (cleanB64.length < 100)
+    return res.json({ ok:false, error:"Imagen inválida o muy pequeña" });
+
+  // Guardar en memoria
+  inventario[id].imagenBase64  = cleanB64;
+  inventario[id].waMediaId     = null;   // invalidar caché anterior
+  inventario[id].waMediaExpiry = null;
+
+  // Pre-subir a WhatsApp y cachear mediaId
+  try {
+    const buffer = Buffer.from(cleanB64, "base64");
+    const mime   = mimeType || "image/jpeg";
+    const ext    = mime.split("/")[1] || "jpg";
+    const upload = await subirMediaWA(buffer, mime, `producto.${ext}`);
+    if (upload.ok) {
+      inventario[id].waMediaId     = upload.mediaId;
+      inventario[id].waMediaExpiry = Date.now() + 29 * 24 * 60 * 60 * 1000;
+      console.log(`🖼️  Foto subida para producto ${id}, mediaId: ${upload.mediaId}`);
+    } else {
+      console.warn(`⚠️  No se pudo pre-subir foto de ${id} a WA:`, upload.error);
+    }
+  } catch (e) {
+    console.warn(`⚠️  Error pre-subiendo foto de ${id}:`, e.message);
+  }
+
+  res.json({ ok:true, tieneImagen: true });
 });
 
 app.post("/admin/inventario", adminAuth, (req, res) => {
