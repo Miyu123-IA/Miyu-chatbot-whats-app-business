@@ -358,6 +358,7 @@ CATÁLOGO COMPLETO:
 
 ENVÍOS: Solo Mazatlán por el momento. Envío gratis en pedidos +$800.
 MÉTODOS DE PAGO: Transferencia bancaria o Mercado Pago.
+LINK DE PAGO MERCADO PAGO: https://link.mercadopago.com.mx/miyubeauty (úsalo cuando la cliente quiera pagar con Mercado Pago o tarjeta)
 DATOS BANCARIOS:
 - Banco: STP
 - Titular: Maria Guadalupe González Miranda
