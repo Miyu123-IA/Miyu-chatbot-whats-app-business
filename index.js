@@ -963,9 +963,20 @@ function debeEnviarImagenes(telefono, textoUsuario, respuestaBot) {
   // ── Escenario 1: cliente pide foto ──────────────────────────
   const pidioFoto = /\bfoto\b|imagen|muéstrame|muestrame|cómo se ve|como se ve|ver el|ver la|mándame|mandame|me puedes mostrar|tienes foto/.test(msgLow);
   if (pidioFoto) {
-    // Buscar primero en el mensaje del cliente, luego en la respuesta del bot
+    // 1a) Producto mencionado en el mensaje del cliente
     let pids = _productosConImagenEnTexto(msgLow);
+    // 1b) Producto mencionado en la respuesta del bot
     if (pids.length === 0) pids = _productosConImagenEnTexto(respLow);
+    // 1c) Producto mencionado en los últimos 6 mensajes del historial
+    //     (cuando el cliente pide foto sin repetir el nombre del producto)
+    if (pids.length === 0) {
+      const contexto = (conversaciones[telefono] || [])
+        .slice(-6)
+        .map(m => (typeof m.content === "string" ? m.content : ""))
+        .join(" ")
+        .toLowerCase();
+      pids = _productosConImagenEnTexto(contexto);
+    }
     const filtrados = filtrar(pids);
     if (filtrados.length > 0) return filtrados;
   }
