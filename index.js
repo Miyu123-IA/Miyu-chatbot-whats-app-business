@@ -919,28 +919,74 @@ function generarCotizacion(items) {
 }
 
 // ============================================================
-// IMÁGENES DE PRODUCTOS: detección y envío automático
+// IMÁGENES DE PRODUCTOS: detección inteligente y envío
 // ============================================================
 
-/**
- * Detecta hasta 2 productos con imagen mencionados en el texto de Claude.
- * Reutiliza NOMBRES_PRODUCTOS para el matching de keywords.
- */
-function detectarProductosMencionados(texto) {
+/** Helper: busca hasta `max` productos con imagen en un texto */
+function _productosConImagenEnTexto(texto, max = 2) {
   const textoLow = texto.toLowerCase();
-  const encontrados = [];
+  const resultado = [];
   for (const [termino, pid] of Object.entries(NOMBRES_PRODUCTOS)) {
-    if (textoLow.includes(termino)) {
-      if (!encontrados.includes(pid)) {
-        const prod = inventario[pid];
-        if (prod && prod.activo && (prod.imagenBase64 || prod.imagenUrl)) {
-          encontrados.push(pid);
-          if (encontrados.length >= 2) break;
-        }
+    if (textoLow.includes(termino) && !resultado.includes(pid)) {
+      const prod = inventario[pid];
+      if (prod && prod.activo && (prod.imagenBase64 || prod.imagenUrl)) {
+        resultado.push(pid);
+        if (resultado.length >= max) break;
       }
     }
   }
-  return encontrados;
+  return resultado;
+}
+
+/**
+ * Decide si hay que enviar fotos de productos y cuáles.
+ * Solo manda imágenes en 3 escenarios:
+ *   1. Cliente pidió foto explícitamente
+ *   2. Cliente indeciso entre dos productos
+ *   3. Alto interés — mismo producto aparece 3+ veces en el historial
+ * Devuelve array de hasta 2 product IDs (vacío = no mandar nada).
+ */
+function debeEnviarImagenes(telefono, textoUsuario, respuestaBot) {
+  const msgLow  = (textoUsuario || "").toLowerCase();
+  const respLow = (respuestaBot  || "").toLowerCase();
+
+  // ── Escenario 1: cliente pide foto ──────────────────────────
+  const pidioFoto = /\bfoto\b|imagen|muéstrame|muestrame|cómo se ve|como se ve|ver el|ver la|mándame|mandame|me puedes mostrar|tienes foto/.test(msgLow);
+  if (pidioFoto) {
+    // Priorizar productos en el mensaje del cliente; si no, en la respuesta
+    const pids = _productosConImagenEnTexto(msgLow) || _productosConImagenEnTexto(respLow);
+    if (pids.length > 0) return pids;
+  }
+
+  // ── Escenario 2: indecisión entre productos ──────────────────
+  const hayIndecision = /no sé|no se|cuál es mejor|cual es mejor|\bentre\b|o el |o la |cuál me recomiendas|cual me recomiendas|me decides|qué diferencia|que diferencia/.test(msgLow);
+  if (hayIndecision) {
+    const pids = _productosConImagenEnTexto(msgLow + " " + respLow, 2);
+    if (pids.length >= 2) return pids;   // solo si hay 2 productos para comparar
+  }
+
+  // ── Escenario 3: alto interés (producto mencionado 3+ veces) ─
+  const historial = conversaciones[telefono] || [];
+  // Solo mensajes del usuario en los últimos 20
+  const textoHistorial = historial
+    .filter(m => m.role === "user")
+    .slice(-20)
+    .map(m => (typeof m.content === "string" ? m.content : ""))
+    .join(" ")
+    .toLowerCase();
+
+  for (const [termino, pid] of Object.entries(NOMBRES_PRODUCTOS)) {
+    const regex  = new RegExp(termino.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+    const conteo = (textoHistorial.match(regex) || []).length;
+    if (conteo >= 3) {
+      const prod = inventario[pid];
+      if (prod && prod.activo && (prod.imagenBase64 || prod.imagenUrl)) {
+        return [pid];
+      }
+    }
+  }
+
+  return [];  // ningún escenario cumplido → no mandar foto
 }
 
 /**
@@ -1132,8 +1178,8 @@ app.post("/webhook", async (req, res) => {
 
         await enviarRespuestaBot(telefono, respuesta);
 
-        // Enviar fotos de productos mencionados en la respuesta
-        const pidsImgAn = detectarProductosMencionados(respuesta);
+        // Enviar fotos solo si hay alto interés (historial) — en ruta de imagen no aplica pedir foto
+        const pidsImgAn = debeEnviarImagenes(telefono, "", respuesta);
         if (pidsImgAn.length > 0) {
           await sleep(1200);
           for (let i = 0; i < pidsImgAn.length; i++) {
@@ -1218,8 +1264,8 @@ app.post("/webhook", async (req, res) => {
     const respuesta = await llamarClaude(telefono, textoUsuario);
     await enviarRespuestaBot(telefono, respuesta);
 
-    // Enviar fotos de productos mencionados por el bot
-    const pidsImg = detectarProductosMencionados(respuesta);
+    // Enviar fotos solo en escenarios específicos (pide foto / indecisa / alto interés)
+    const pidsImg = debeEnviarImagenes(telefono, textoUsuario, respuesta);
     if (pidsImg.length > 0) {
       await sleep(1200);
       for (let i = 0; i < pidsImg.length; i++) {
