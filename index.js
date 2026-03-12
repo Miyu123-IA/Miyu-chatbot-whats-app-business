@@ -356,7 +356,7 @@ CATÁLOGO COMPLETO:
 🏥 SALUD:
 - Parches para Juanetes Kyusoku Jikan $120
 
-ENVÍOS: Solo Mazatlán por el momento. Envío gratis en pedidos +$800.
+ENVÍOS: Enviamos a toda la zona Mazatlán con envío GRATIS (sin mínimo de compra). También hacemos envíos nacionales a toda la República; el costo de envío nacional depende del peso y dimensiones del paquete.
 MÉTODOS DE PAGO: Transferencia bancaria o Mercado Pago.
 LINK DE PAGO MERCADO PAGO: https://link.mercadopago.com.mx/miyubeauty (úsalo cuando la cliente quiera pagar con Mercado Pago o tarjeta)
 DATOS BANCARIOS:
@@ -381,6 +381,8 @@ FORMATO DE RESPUESTA:
 - No uses listas largas si no te las piden. Responde lo que preguntaron.
 - Evita repetir lo que ya dijiste antes en la conversación.
 - Si vas a dar precio y descripción de un producto, hazlo en 2 líneas, no en un párrafo.
+
+IDIOMA: Responde siempre en español, a menos que: (1) el cliente pida explícitamente atención en inglés, o (2) el mensaje del cliente contenga más de 3 palabras en inglés. En esos casos responde en inglés y mantén el inglés para el resto de esa conversación hasta que el cliente vuelva al español.
 
 IMPORTANTE:
 - Si alguien manda una foto de piel/rostro, analízala brevemente y recomienda 1-2 productos concretos.
@@ -604,6 +606,15 @@ async function enviarRespuestaBot(telefono, texto) {
 // ============================================================
 // FUNCIÓN: Llamar a Claude API
 // ============================================================
+/** Detecta si un texto tiene más de 3 palabras en inglés */
+function detectarIngles(texto) {
+  const palabrasIngles = /\b(the|this|that|is|are|was|were|have|has|had|do|does|did|will|would|can|could|should|may|might|must|shall|i|you|he|she|we|they|my|your|his|her|our|their|what|how|where|when|why|who|which|please|thank|thanks|hello|hi|hey|good|great|want|need|like|love|know|think|look|make|give|tell|send|help|yes|no|not|and|but|or|for|with|about|from|at|by|on|in|of|to|a|an)\b/gi;
+  const palabrasEspanol = /\b(el|la|los|las|un|una|unos|unas|que|de|en|y|a|es|se|no|al|del|por|con|una|su|para|como|más|pero|sus|le|ya|o|fue|hay|cuando|sin|sobre|ser|tiene|también|hasta|desde|estar|yo|mi|me|si|sí|lo|muy|son|todo|bien|este|esto|eso|ese|qué|cómo|cuánto|dónde|cuál|tengo|quiero|puedo|puede|hola|gracias|precio)\b/gi;
+  const matchesIngles  = (texto.match(palabrasIngles)  || []).length;
+  const matchesEspanol = (texto.match(palabrasEspanol) || []).length;
+  return matchesIngles > 3 && matchesIngles > matchesEspanol;
+}
+
 async function llamarClaude(telefono, mensajeUsuario) {
   if (!conversaciones[telefono]) conversaciones[telefono] = [];
 
@@ -613,6 +624,13 @@ async function llamarClaude(telefono, mensajeUsuario) {
     ts: new Date().toISOString(),
   });
   aplicarLimiteHistorial(telefono, 20);
+
+  // Detectar si el cliente está escribiendo en inglés
+  const esIngles = detectarIngles(mensajeUsuario) ||
+    /please respond in english|english please|can you speak english|do you speak english/i.test(mensajeUsuario);
+  const systemFinal = esIngles
+    ? SYSTEM_PROMPT + "\n\nIMPORTANT: The customer is writing in English. You MUST respond in English for this entire conversation."
+    : SYSTEM_PROMPT;
 
   try {
     const res = await fetchConTimeout("https://api.anthropic.com/v1/messages", {
@@ -625,7 +643,7 @@ async function llamarClaude(telefono, mensajeUsuario) {
       body: JSON.stringify({
         model: "claude-opus-4-6",
         max_tokens: 1024,
-        system: SYSTEM_PROMPT,
+        system: systemFinal,
         messages: conversaciones[telefono].map(({ role, content }) => ({ role, content })),
       }),
     }, 40000); // 40 segundos — Claude puede tardar más de 15s
@@ -871,7 +889,7 @@ async function actualizarEstadoPedido(pedidoId, nuevoEstado, notas) {
 const TEMPLATES_SEGUIMIENTO = {
   reenganche: `¡Hola! 👋 Te escribimos de Miyu Beauty. Notamos que tenías interés en alguno de nuestros productos ✨ ¿Pudiste encontrar lo que buscabas? Con gusto te ayudamos 🌸`,
   postventa:  `¡Hola! 💖 Esperamos que estés disfrutando tus productos de Miyu Beauty. ¿Cómo te han funcionado? Tu opinión nos ayuda a mejorar 🌟`,
-  abandono:   `¡Hola! 🌸 Vimos que estabas interesada en nuestro catálogo. Por tiempo limitado tenemos envío gratis en pedidos desde $800 😊 ¿Te ayudo a elegir?`,
+  abandono:   `¡Hola! 🌸 Vimos que estabas interesada en nuestro catálogo. Tenemos envío gratis a toda la zona Mazatlán 😊 ¿Te ayudo a elegir?`,
 };
 
 function programarSeguimiento(telefono, tipo, horasDelay, mensajeCustom) {
@@ -908,14 +926,14 @@ function generarCotizacion(items) {
     total += subtotal;
     lineas.push(`• ${prod.nombre} x${item.cantidad||1} — $${subtotal}`);
   }
-  const envio = total >= 800 ? "GRATIS 🎉" : "$TBD (solo Mazatlán)";
   return [
     `📋 *Cotización Miyu Beauty*`,
     ``,
     ...lineas,
     ``,
     `💰 *Subtotal: $${total}*`,
-    `🚚 Envío: ${envio}`,
+    `🚚 Envío Mazatlán: GRATIS 🎉`,
+    `🚚 Envío nacional: según peso y dimensiones del paquete`,
     ``,
     `¿Confirmas el pedido? Puedo enviarte el link de pago o los datos bancarios 🌸`,
   ].join("\n");
@@ -1307,6 +1325,7 @@ app.post("/webhook", async (req, res) => {
         }
       }
     }
+
 
   } catch (err) {
     console.error("Error en webhook:", err.message);
