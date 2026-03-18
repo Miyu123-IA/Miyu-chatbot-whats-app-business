@@ -22,8 +22,21 @@ const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
 // WEB PUSH (PWA — notificaciones iOS/Android)
 // ============================================================
 const zlib = require('zlib');
+const fs   = require('fs');
+const PUSH_SUBS_FILE = './push-subscriptions.json';
+
 let webpush = null;
+// Cargar subscripciones desde archivo para sobrevivir reinicios
 const pushSubscriptions = new Set();
+try {
+  const saved = JSON.parse(fs.readFileSync(PUSH_SUBS_FILE, 'utf8'));
+  if (Array.isArray(saved)) saved.forEach(s => pushSubscriptions.add(s));
+  console.log(`🔔 ${pushSubscriptions.size} suscripciones push cargadas`);
+} catch(_) { /* archivo no existe aún, ok */ }
+
+function savePushSubscriptions() {
+  try { fs.writeFileSync(PUSH_SUBS_FILE, JSON.stringify([...pushSubscriptions])); } catch(_) {}
+}
 
 try {
   webpush = require('web-push');
@@ -104,7 +117,7 @@ async function sendPushToAll(title, body, url) {
       if (e.statusCode === 410 || e.statusCode === 404) toRemove.push(subStr);
     }
   }
-  toRemove.forEach(s => pushSubscriptions.delete(s));
+  if (toRemove.length) { toRemove.forEach(s => pushSubscriptions.delete(s)); savePushSubscriptions(); }
 }
 
 const SW_JS = `
@@ -1456,7 +1469,7 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MIYU">
@@ -1504,8 +1517,14 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
 }
 
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-html, body { height:100%; overflow:hidden; background:var(--c-base); }
-body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
+html { height:100%; height:100dvh; overflow:hidden; background:var(--c-base); }
+body { height:100%; overflow:hidden; background:var(--c-base);
+  font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default;
+  /* Safe area para Dynamic Island y home indicator */
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
 ::selection { background:var(--c-gold-glow); }
 
 /* scrollbar */
@@ -2141,7 +2160,8 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
 @media (max-width: 768px) {
   :root { --nav-w: 0px; }
 
-  html, body { overflow:hidden; -webkit-text-size-adjust:100%; }
+  html, body { overflow:hidden; -webkit-text-size-adjust:100%; height:100dvh; }
+  body { padding-top:env(safe-area-inset-top); }
   * { -webkit-tap-highlight-color:transparent; }
 
   /* ── Bottom nav bar ── */
@@ -2162,7 +2182,7 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
   .nav-avatar { width:34px; height:34px; font-size:13px; }
 
   /* ── Shell ── */
-  .shell { height:calc(100dvh - 56px - env(safe-area-inset-bottom)); flex-direction:column; }
+  .shell { height:calc(100dvh - 56px - env(safe-area-inset-bottom) - env(safe-area-inset-top)); flex-direction:column; }
   .views { flex:1; height:100%; min-height:0; }
 
   /* ── Chat view: sliding panels ── */
@@ -2508,7 +2528,16 @@ function escapeHtml(s) {
 // ══════════════════════════════════════════════
 //  AUTH
 // ══════════════════════════════════════════════
-let adminToken = sessionStorage.getItem('miyu_token') || '';
+// Sesión persistente: localStorage con 30 días de expiración
+let adminToken = '';
+(function() {
+  const raw = localStorage.getItem('miyu_token');
+  if (raw) {
+    const [tok, ts] = raw.split('|');
+    if (tok && Date.now() - parseInt(ts || '0') < 30 * 24 * 3600 * 1000) adminToken = tok;
+    else localStorage.removeItem('miyu_token');
+  }
+})();
 let pollingInterval = null;
 
 function authHeaders() {
@@ -2534,7 +2563,7 @@ async function doLogin() {
       err.style.display = 'block';
       adminToken = '';
     } else {
-      sessionStorage.setItem('miyu_token', adminToken);
+      localStorage.setItem('miyu_token', adminToken + '|' + Date.now());
       document.getElementById('auth-overlay').style.display = 'none';
       startApp();
     }
@@ -2569,8 +2598,22 @@ async function registerSW() {
   if (!('serviceWorker' in navigator)) return;
   try {
     swReg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-    if (Notification.permission === 'granted') await subscribePush();
-    else updateBellState();
+    await navigator.serviceWorker.ready;
+    if (Notification.permission === 'granted') {
+      // Verificar si ya hay subscripción activa; si no, renovar
+      const existing = await swReg.pushManager.getSubscription();
+      if (existing) {
+        // Re-registrar en servidor por si el servidor reinició y perdió subscripciones
+        await fetch('/admin/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + adminToken },
+          body: JSON.stringify(existing)
+        });
+        updateBellState();
+      } else {
+        await subscribePush();
+      }
+    } else updateBellState();
   } catch(e) { console.warn('SW:', e); }
 }
 
@@ -2626,7 +2669,7 @@ async function fetchChats() {
     const r = await fetch('/admin/chats', { headers: authHeaders() });
     if (r.status === 401) {
       clearInterval(pollingInterval);
-      sessionStorage.removeItem('miyu_token');
+      localStorage.removeItem('miyu_token');
       document.getElementById('auth-overlay').style.display = 'flex';
       return;
     }
@@ -3571,7 +3614,7 @@ if (adminToken) {
   fetch('/admin/chats', { headers: { Authorization: 'Bearer ' + adminToken } })
     .then(r => {
       if (r.status === 401) {
-        sessionStorage.removeItem('miyu_token');
+        localStorage.removeItem('miyu_token');
         adminToken = '';
         document.getElementById('auth-overlay').style.display = 'flex';
       } else {
@@ -4061,6 +4104,7 @@ app.post('/admin/push/subscribe', adminAuth, (req, res) => {
   const sub = req.body;
   if (!sub || !sub.endpoint) return res.json({ ok: false, error: 'Suscripción inválida' });
   pushSubscriptions.add(JSON.stringify(sub));
+  savePushSubscriptions();
   console.log(`🔔 Suscripción push registrada. Total: ${pushSubscriptions.size}`);
   res.json({ ok: true });
 });
