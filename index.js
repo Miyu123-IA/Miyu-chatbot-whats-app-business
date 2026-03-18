@@ -15,6 +15,119 @@ const PORT              = process.env.PORT || 3000;
 const ADMIN_TOKEN       = process.env.ADMIN_TOKEN || "miyu-admin-2026";
 const SUPABASE_URL      = process.env.SUPABASE_URL || null;
 const SUPABASE_KEY      = process.env.SUPABASE_KEY || null;
+const VAPID_PUBLIC_KEY  = process.env.VAPID_PUBLIC_KEY  || '';
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
+
+// ============================================================
+// WEB PUSH (PWA — notificaciones iOS/Android)
+// ============================================================
+const zlib = require('zlib');
+let webpush = null;
+const pushSubscriptions = new Set();
+
+try {
+  webpush = require('web-push');
+  if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+    webpush.setVapidDetails('mailto:admin@miyu.beauty', VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+    console.log('🔔 Web Push VAPID configurado');
+  } else {
+    console.warn('⚠️  VAPID keys no configuradas. Visita /admin/push/generate-keys para generarlas.');
+    webpush = null;
+  }
+} catch(e) {
+  console.warn('⚠️  web-push no disponible:', e.message);
+  webpush = null;
+}
+
+// PNG icon generator (Node.js built-in zlib, sin canvas ni deps externos)
+function makePNG(w, h, pixelFn) {
+  const rows = [];
+  for (let y = 0; y < h; y++) {
+    rows.push(0); // filter byte: None
+    for (let x = 0; x < w; x++) {
+      const [r, g, b, a] = pixelFn(x, y, w, h);
+      rows.push(r, g, b, a);
+    }
+  }
+  const raw = Buffer.from(rows);
+  const compressed = zlib.deflateSync(raw);
+  const crcTable = [];
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    crcTable[i] = c;
+  }
+  function crc(buf) {
+    let c = 0xffffffff;
+    for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  }
+  function chunk(name, data) {
+    const n = Buffer.from(name);
+    const d = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    const l = Buffer.alloc(4); l.writeUInt32BE(d.length);
+    const cv = Buffer.alloc(4); cv.writeUInt32BE(crc(Buffer.concat([n, d])));
+    return Buffer.concat([l, n, d, cv]);
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8; ihdr[9] = 6; // 8-bit RGBA
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', compressed),
+    chunk('IEND', Buffer.alloc(0))
+  ]);
+}
+function makeMiyuIcon(size) {
+  return makePNG(size, size, (x, y, w, h) => {
+    const cx = w / 2 - 0.5, cy = h / 2 - 0.5;
+    const d = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
+    const outer = w * 0.46;
+    const inner = w * 0.28;
+    if (d >= inner && d <= outer) return [200, 171, 110, 255]; // gold ring
+    return [10, 8, 9, 255]; // dark bg
+  });
+}
+const ICON_192   = makeMiyuIcon(192);
+const ICON_512   = makeMiyuIcon(512);
+const ICON_APPLE = makeMiyuIcon(180);
+
+async function sendPushToAll(title, body, url) {
+  if (!webpush || pushSubscriptions.size === 0) return;
+  const payload = JSON.stringify({ title, body, url: url || '/admin' });
+  const toRemove = [];
+  for (const subStr of pushSubscriptions) {
+    try {
+      await webpush.sendNotification(JSON.parse(subStr), payload);
+    } catch(e) {
+      if (e.statusCode === 410 || e.statusCode === 404) toRemove.push(subStr);
+    }
+  }
+  toRemove.forEach(s => pushSubscriptions.delete(s));
+}
+
+const SW_JS = `
+self.addEventListener('push', e => {
+  const d = e.data ? e.data.json() : { title: 'MIYU', body: 'Nuevo mensaje' };
+  e.waitUntil(self.registration.showNotification(d.title, {
+    body: d.body,
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    tag: 'miyu-msg',
+    renotify: true,
+    data: { url: d.url || '/admin' }
+  }));
+});
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(clients.matchAll({ type: 'window' }).then(ws => {
+    const w = ws.find(w => w.url.includes('/admin'));
+    if (w) return w.focus();
+    return clients.openWindow('/admin');
+  }));
+});
+`;
 
 // Validar variables críticas al arranque (warnings, no crash)
 const missingVars = [];
@@ -1110,6 +1223,10 @@ app.post("/webhook", async (req, res) => {
     // Métricas globales
     metricas.mensajesHoy++;
     const esNuevoCliente = !perfilesClientes[telefono];
+
+    // Push notification al dashboard cuando llega un mensaje de WhatsApp
+    const _nombre = perfilesClientes[telefono]?.nombre || telefono;
+    sendPushToAll('💬 Nuevo mensaje — MIYU', _nombre + ' te escribió').catch(() => {});
     if (esNuevoCliente) metricas.totalConversaciones++;
 
     if (modoPausa[telefono]) {
@@ -1342,7 +1459,10 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MIYU">
 <meta name="theme-color" content="#0a0809">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-apple.png">
 <title>MIYU Beauty — Centro de Operaciones</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
@@ -1473,6 +1593,7 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
   transition:var(--transition);
 }
 .nav-avatar:hover { transform:scale(1.06); }
+.nav-btn.push-on { background:var(--c-gold-glow) !important; color:var(--c-gold) !important; }
 
 /* ─────────────────────────────────────────
    VIEWS WRAPPER
@@ -2188,6 +2309,7 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
     <div class="nav-btn"    id="nb-analytics" onclick="view('analytics')" title="Métricas">📊</div>
     <div class="nav-btn"    id="nb-stock"     onclick="view('stock')"     title="Inventario">📦</div>
     <div class="nav-spacer"></div>
+    <div class="nav-btn" id="nb-bell" onclick="togglePush()" title="Notificaciones">🔔</div>
     <div class="nav-avatar" title="Miyu Beauty">M</div>
   </nav>
 
@@ -2436,6 +2558,52 @@ function startApp() {
   setInterval(fetchMetricas,   30000);
   setInterval(fetchInventario, 60000);
   setInterval(fetchLeads,      15000);
+  registerSW();
+}
+
+// ── PWA / Push Notifications ──────────────────────────────
+const VAPID_PUB = '${VAPID_PUBLIC_KEY}';
+let swReg = null;
+
+async function registerSW() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    swReg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    if (Notification.permission === 'granted') await subscribePush();
+    else updateBellState();
+  } catch(e) { console.warn('SW:', e); }
+}
+
+function updateBellState() {
+  const btn = document.getElementById('nb-bell');
+  if (!btn) return;
+  if (Notification.permission === 'granted') btn.classList.add('push-on');
+  else btn.classList.remove('push-on');
+}
+
+async function subscribePush() {
+  if (!swReg || !VAPID_PUB) return;
+  try {
+    const raw = atob(VAPID_PUB.replace(/-/g,'+').replace(/_/g,'/'));
+    const key = new Uint8Array([...raw].map(c => c.charCodeAt(0)));
+    const sub = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+    await fetch('/admin/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + adminToken },
+      body: JSON.stringify(sub)
+    });
+    updateBellState();
+    toast('✓ Notificaciones activadas', 't-mint');
+  } catch(e) { console.warn('Push sub:', e); }
+}
+
+async function togglePush() {
+  if (!('Notification' in window)) { toast('Notificaciones no soportadas en este navegador', 't-warn'); return; }
+  if (Notification.permission === 'denied') { toast('Activa notificaciones en Ajustes > Safari', 't-warn'); return; }
+  if (Notification.permission === 'granted') { toast('Notificaciones ya activadas 🔔', 't-mint'); return; }
+  const p = await Notification.requestPermission();
+  if (p === 'granted') await subscribePush();
+  else toast('Permiso denegado', 't-warn');
 }
 
 // ══════════════════════════════════════════════
@@ -3843,6 +4011,82 @@ app.get("/admin/leads", adminAuth, (req, res) => {
     }))
     .sort((a,b) => b.score - a.score);
   res.json({ ok:true, leads:lista, total:lista.length });
+});
+
+// ============================================================
+// PWA ROUTES (sin auth — acceso público necesario)
+// ============================================================
+app.get('/manifest.json', (req, res) => {
+  res.json({
+    name: 'MIYU Beauty — Centro de Operaciones',
+    short_name: 'MIYU',
+    description: 'Dashboard de control MIYU Beauty',
+    start_url: '/admin',
+    display: 'standalone',
+    background_color: '#0a0809',
+    theme_color: '#0a0809',
+    orientation: 'any',
+    icons: [
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+    ]
+  });
+});
+
+app.get('/sw.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.setHeader('Service-Worker-Allowed', '/');
+  res.send(SW_JS);
+});
+
+app.get('/icon-192.png', (req, res) => {
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.send(ICON_192);
+});
+
+app.get('/icon-512.png', (req, res) => {
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.send(ICON_512);
+});
+
+app.get('/icon-apple.png', (req, res) => {
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.send(ICON_APPLE);
+});
+
+app.post('/admin/push/subscribe', adminAuth, (req, res) => {
+  const sub = req.body;
+  if (!sub || !sub.endpoint) return res.json({ ok: false, error: 'Suscripción inválida' });
+  pushSubscriptions.add(JSON.stringify(sub));
+  console.log(`🔔 Suscripción push registrada. Total: ${pushSubscriptions.size}`);
+  res.json({ ok: true });
+});
+
+// Ruta helper para generar las VAPID keys — acepta token como query param para abrirla en browser
+app.get('/admin/push/generate-keys', (req, res) => {
+  const token = req.query.token || (req.headers.authorization || '').replace('Bearer ', '');
+  if (token !== ADMIN_TOKEN) return res.status(401).send('No autorizado');
+  try {
+    const wp = require('web-push');
+    const keys = wp.generateVAPIDKeys();
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>VAPID Keys MIYU</title>
+<style>body{font-family:monospace;background:#0a0809;color:#ede8e0;padding:32px;max-width:700px}
+h2{color:#c8ab6e}div{background:#19181f;border-radius:8px;padding:14px;margin:12px 0;word-break:break-all}
+small{color:#9a928a;display:block;margin-bottom:6px}.warn{background:#1a100a;border:1px solid #c8ab6e55;border-radius:8px;padding:12px;color:#c8ab6e;font-size:13px;margin:16px 0}
+</style></head><body>
+<h2>🔑 VAPID Keys — MIYU PWA</h2>
+<div class="warn">⚠️ Cópialas AHORA. Si recargas se generan nuevas y las subscripciones dejan de funcionar.</div>
+<div><small>VAPID_PUBLIC_KEY</small><b>${keys.publicKey}</b></div>
+<div><small>VAPID_PRIVATE_KEY</small><b>${keys.privateKey}</b></div>
+<p style="color:#524d4a;margin-top:20px;font-size:12px">1. Copia ambas<br>2. Railway → Variables → agrega las 2<br>3. Redeploy automático<br>4. Abre /admin en Safari → Compartir → Agregar a pantalla de inicio<br>5. Toca 🔔 en el nav</p>
+</body></html>`);
+  } catch(e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 // ============================================================
