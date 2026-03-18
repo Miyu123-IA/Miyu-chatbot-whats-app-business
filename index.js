@@ -1490,6 +1490,8 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
   border-right:1px solid var(--c-rim);
   display:flex; flex-direction:column;
   overflow:hidden;
+  isolation:isolate;
+  will-change:transform;
 }
 .sb-head {
   padding:18px 18px 14px;
@@ -1524,13 +1526,12 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
   border-color:rgba(200,171,110,.3); color:var(--c-gold);
 }
 
-.chat-list { flex:1; overflow-y:auto; }
+.chat-list { flex:1; overflow-y:auto; overscroll-behavior:contain; will-change:transform; }
 
 .chat-row {
   padding:13px 18px; cursor:pointer;
   border-bottom:1px solid var(--c-rim);
   transition:background .12s; position:relative;
-  animation:rowIn .22s ease both;
 }
 @keyframes rowIn { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:none} }
 .chat-row:hover { background:var(--c-raised); }
@@ -1622,7 +1623,7 @@ body { font-family:'DM Sans', sans-serif; color:var(--c-text); cursor:default; }
 .btn-pay:hover { background:rgba(30,160,250,.18); }
 
 /* Messages */
-.msgs-wrap { flex:1; overflow-y:auto; padding:24px 22px; display:flex; flex-direction:column; gap:13px; }
+.msgs-wrap { flex:1; overflow-y:auto; padding:24px 22px; display:flex; flex-direction:column; gap:13px; overscroll-behavior:contain; }
 .msg { max-width:66%; }
 .msg.bot, .msg.agent { align-self:flex-start; }
 .msg.user { align-self:flex-end; }
@@ -2441,6 +2442,7 @@ function startApp() {
 //  STATE
 // ══════════════════════════════════════════════
 let chats = [], activo = null, filtro = 'todos', tabActual = 'perfil', busq = '';
+let _lastChatsKey = '';
 let inventarioData = [];   // loaded from /admin/inventario
 let pedidosData    = [];   // loaded from /admin/pedidos
 let metricasData   = null; // loaded from /admin/metricas
@@ -2468,7 +2470,7 @@ async function fetchChats() {
       return;
     }
     if (!data.ok || !data.chats) return;
-    chats = data.chats.map(c => ({
+    const newChats = data.chats.map(c => ({
       id:       c.telefono,
       nombre:   c.nombre || ('+' + c.telefono),
       tel:      c.telefono,
@@ -2484,8 +2486,14 @@ async function fetchChats() {
       preview:  c.ultimoMensaje || 'Sin mensajes aún',
       mensajesCount: c.mensajes || 0,
     }));
-    renderList();
-    syncStats();
+    const newKey = newChats.map(c => \`\${c.id}|\${c.bot}|\${c.tipo}|\${c.msgs.length}|\${c.preview}\`).join(';;');
+    const listChanged = newKey !== _lastChatsKey;
+    chats = newChats;
+    if (listChanged) {
+      _lastChatsKey = newKey;
+      renderList();
+      syncStats();
+    }
     if (activo) {
       const u = chats.find(x => x.id === activo.id);
       if (u) {
@@ -2494,12 +2502,25 @@ async function fetchChats() {
         const botChanged  = u.bot !== activo.bot;
         const inputActual = document.getElementById('ibar-txt')?.value || '';
         activo = u;
-        if (msgsChanged || botChanged) {
-          renderCenter();
-          if (inputActual) {
-            const el = document.getElementById('ibar-txt');
-            if (el) el.value = inputActual;
+        if (msgsChanged) {
+          // Actualizar solo el área de mensajes sin re-renderizar todo el panel
+          const w = document.getElementById('msgs-wrap');
+          if (w) {
+            const isAtBottom = w.scrollHeight - w.scrollTop - w.clientHeight < 80;
+            const newMsgsHTML = u.msgs.map(m =>
+              \`<div class="msg \${m.role}"><div class="msg-who">\${m.role==='bot'?'✦ MIYU':m.role==='agent'?'⚡ AGENTE':escapeHtml(u.nombre.toUpperCase())}</div><div class="bubble">\${escapeHtml(m.txt)}</div><div class="msg-ts">\${escapeHtml(m.ts)}</div></div>\`
+            ).join('');
+            if (w.innerHTML !== newMsgsHTML) {
+              w.innerHTML = newMsgsHTML;
+              if (isAtBottom) w.scrollTop = w.scrollHeight;
+            }
+          } else {
+            renderCenter();
+            if (inputActual) { const el = document.getElementById('ibar-txt'); if (el) el.value = inputActual; }
           }
+        } else if (botChanged) {
+          renderCenter();
+          if (inputActual) { const el = document.getElementById('ibar-txt'); if (el) el.value = inputActual; }
         }
       }
     }
@@ -2554,6 +2575,13 @@ function classTipo(c) {
 // ══════════════════════════════════════════════
 //  RENDER CHAT LIST
 // ══════════════════════════════════════════════
+function rowInner(c) {
+  const lead = leadsData.find(l => l.telefono === c.id);
+  const leadBadge = lead && lead.score > 0
+    ? \`<span class="lead-badge lead-\${escapeHtml(lead.etapa||'frio')}">\${lead.score}</span>\`
+    : '';
+  return \`<div class="cr-head"><div class="cr-name">\${escapeHtml(c.nombre)}\${leadBadge}</div><div class="cr-time">activo</div></div><div class="cr-preview">\${escapeHtml(c.preview)}</div><div class="cr-tags"><span class="tag \${!c.bot?'tag-human':'tag-bot'}">\${!c.bot?'⚡ humano':'🤖 bot'}</span><span class="tag tag-\${c.tipo==='nuevo'?'nuevo':c.tipo==='frecuente'?'frec':'vip'}">\${escapeHtml(c.tipo)}</span></div>\`;
+}
 function renderList() {
   const el = document.getElementById('chat-list');
   let list = chats.filter(c => {
@@ -2566,32 +2594,34 @@ function renderList() {
     c.nombre.toLowerCase().includes(busq.toLowerCase()) || c.tel.includes(busq)
   );
   if (!list.length) {
-    el.innerHTML = \`<div style="padding:28px;text-align:center;color:var(--c-text3);font-size:11.5px;line-height:1.9">
-      Sin conversaciones activas<br>en este filtro 🌸</div>\`;
+    if (!el.querySelector('.list-empty')) {
+      el.innerHTML = \`<div class="list-empty" style="padding:28px;text-align:center;color:var(--c-text3);font-size:11.5px;line-height:1.9">Sin conversaciones activas<br>en este filtro 🌸</div>\`;
+    }
     return;
   }
-  // Usar data-id en lugar de onclick con interpolación para evitar XSS
-  el.innerHTML = list.map((c,i) => {
-    const lead = leadsData.find(l => l.telefono === c.id);
-    const leadBadge = lead && lead.score > 0
-      ? \`<span class="lead-badge lead-\${escapeHtml(lead.etapa||'frio')}">\${lead.score}</span>\`
-      : '';
-    return \`
-    <div class="chat-row \${c.id===activo?.id?'sel':''} \${!c.bot?'paused':''}"
-         data-id="\${escapeHtml(c.id)}"
-         onclick="selChat(this.dataset.id)"
-         style="animation-delay:\${i*.04}s">
-      <div class="cr-head">
-        <div class="cr-name">\${escapeHtml(c.nombre)}\${leadBadge}</div>
-        <div class="cr-time">activo</div>
-      </div>
-      <div class="cr-preview">\${escapeHtml(c.preview)}</div>
-      <div class="cr-tags">
-        <span class="tag \${!c.bot?'tag-human':'tag-bot'}">\${!c.bot?'⚡ humano':'🤖 bot'}</span>
-        <span class="tag tag-\${c.tipo==='nuevo'?'nuevo':c.tipo==='frecuente'?'frec':'vip'}">\${escapeHtml(c.tipo)}</span>
-      </div>
-    </div>\`;
-  }).join('');
+  el.querySelector('.list-empty')?.remove();
+  const newIds = list.map(c => c.id);
+  // Eliminar filas que ya no existen
+  el.querySelectorAll('[data-id]').forEach(row => {
+    if (!newIds.includes(row.dataset.id)) row.remove();
+  });
+  // Actualizar o insertar cada fila sin limpiar el contenedor
+  list.forEach((c, i) => {
+    let row = el.querySelector(\`[data-id="\${escapeHtml(c.id)}"]\`);
+    const cls = \`chat-row\${c.id===activo?.id?' sel':''}\${!c.bot?' paused':''}\`;
+    const inner = rowInner(c);
+    if (!row) {
+      row = document.createElement('div');
+      row.dataset.id = c.id;
+      row.setAttribute('onclick', 'selChat(this.dataset.id)');
+      row.innerHTML = inner;
+      const siblings = el.querySelectorAll('[data-id]');
+      siblings[i] ? el.insertBefore(row, siblings[i]) : el.appendChild(row);
+    } else {
+      if (row.innerHTML !== inner) row.innerHTML = inner;
+    }
+    if (row.className !== cls) row.className = cls;
+  });
 }
 
 // ══════════════════════════════════════════════
