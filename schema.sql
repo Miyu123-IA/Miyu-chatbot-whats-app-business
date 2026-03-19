@@ -38,6 +38,13 @@ CREATE TABLE IF NOT EXISTS leads (
   actualizado_en TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- ── Inventario ───────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS inventario_db (
+  id             TEXT        PRIMARY KEY,
+  datos          JSONB       NOT NULL DEFAULT '{}'::jsonb,
+  actualizado_en TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- ── Row Level Security (RLS) — desactívalo si usas service_role key ──
 -- Por defecto Supabase bloquea acceso anónimo.
 -- Con la service_role key (SUPABASE_KEY) el acceso es de administrador

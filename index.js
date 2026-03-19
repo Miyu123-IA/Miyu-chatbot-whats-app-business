@@ -310,10 +310,24 @@ async function cargarDesdeSupabase() {
         leadScores[row.telefono] = row.datos;
       }
     }
-    console.log(`✅ Supabase: ${convRows.length} convs, ${perfRows.length} perfiles, ${pedRows.length} pedidos, ${leadRows.length} leads cargados`);
+    // Inventario (incluye imágenes guardadas)
+    const invRows = await sbSelect("inventario_db");
+    for (const row of invRows) {
+      if (row.id && row.datos) {
+        if (inventario[row.id]) Object.assign(inventario[row.id], row.datos);
+        else inventario[row.id] = row.datos;
+      }
+    }
+    console.log(`✅ Supabase: ${convRows.length} convs, ${perfRows.length} perfiles, ${pedRows.length} pedidos, ${leadRows.length} leads, ${invRows.length} productos cargados`);
   } catch (e) {
     console.error("❌ Error cargando desde Supabase:", e.message);
   }
+}
+
+async function guardarProductoDB(id) {
+  const prod = inventario[id];
+  if (!prod) return;
+  await sbUpsert("inventario_db", { id, datos: prod, actualizado_en: new Date().toISOString() });
 }
 
 // ── INVENTARIO ──────────────────────────────────────────────
@@ -3853,6 +3867,7 @@ app.put("/admin/inventario/:id", adminAuth, (req, res) => {
   if (typeof activo    === "boolean")                  inventario[id].activo     = activo;
   if (typeof stockMinimo=== "number"&& stockMinimo>=0) inventario[id].stockMinimo= Math.floor(stockMinimo);
   if (typeof imagenUrl === "string")                   inventario[id].imagenUrl  = imagenUrl.trim();
+  guardarProductoDB(id).catch(() => {});
   console.log(`📦 Inventario actualizado: ${id}`);
   res.json({ ok:true, producto:inventario[id] });
 });
@@ -3893,6 +3908,7 @@ app.post("/admin/inventario/:id/imagen", adminAuth, async (req, res) => {
     console.warn(`⚠️  Error pre-subiendo foto de ${id}:`, e.message);
   }
 
+  guardarProductoDB(id).catch(() => {});
   res.json({ ok:true, tieneImagen: true });
 });
 
@@ -3906,6 +3922,7 @@ app.post("/admin/inventario", adminAuth, (req, res) => {
     id, nombre:nombre.trim(), precio, stock:stock||0, stockMinimo:stockMinimo||3,
     categoria:categoria||"otro", descripcion:descripcion||"", imagenUrl:"", activo:true, vendidos:0,
   };
+  guardarProductoDB(id).catch(() => {});
   res.json({ ok:true, producto:inventario[id] });
 });
 
