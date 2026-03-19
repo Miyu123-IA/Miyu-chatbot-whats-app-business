@@ -4150,6 +4150,38 @@ small{color:#9a928a;display:block;margin-bottom:6px}.warn{background:#1a100a;bor
   }
 });
 
+// Diagnóstico de push — muestra estado actual y envía test
+app.get('/admin/push/status', (req, res) => {
+  const token = req.query.token || (req.headers.authorization || '').replace('Bearer ', '');
+  if (token !== ADMIN_TOKEN) return res.status(401).send('No autorizado');
+  const subsArr = [...pushSubscriptions].map(s => { try { return JSON.parse(s).endpoint?.slice(0,60) + '...'; } catch(_) { return 'inválida'; } });
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Push Status MIYU</title>
+<style>body{font-family:monospace;background:#0a0809;color:#ede8e0;padding:28px;max-width:700px}
+h2{color:#c8ab6e}pre{background:#19181f;padding:14px;border-radius:8px;word-break:break-all;white-space:pre-wrap}
+.ok{color:#6daa8e}.warn{color:#c8ab6e}.err{color:#c97d8e}a{color:#c8ab6e}</style></head><body>
+<h2>🔔 Estado Push — MIYU</h2>
+<pre>webpush activo: <span class="${webpush?'ok':'err'}">${webpush?'SÍ':'NO — falta web-push o VAPID keys'}</span>
+VAPID_PUBLIC_KEY: <span class="${VAPID_PUBLIC_KEY?'ok':'err'}">${VAPID_PUBLIC_KEY?'✓ configurada':'✗ NO configurada'}</span>
+VAPID_PRIVATE_KEY: <span class="${VAPID_PRIVATE_KEY?'ok':'err'}">${VAPID_PRIVATE_KEY?'✓ configurada':'✗ NO configurada'}</span>
+Suscripciones activas: <span class="${pushSubscriptions.size>0?'ok':'warn'}">${pushSubscriptions.size}</span>
+${subsArr.map((e,i)=>`  [${i+1}] ${e}`).join('\n')||'  (ninguna — el usuario debe abrir la app y tocar 🔔)'}
+</pre>
+${pushSubscriptions.size>0?`<p><a href="/admin/push/test?token=${token}">→ Enviar notificación de prueba ahora</a></p>`:'<p class="warn">Sin suscripciones. Abre la app PWA en el iPhone, toca 🔔 y recarga esta página.</p>'}
+<p style="color:#524d4a;font-size:12px;margin-top:20px">Productos con imagen: ${Object.values(inventario).filter(p=>p.imagenBase64||p.imagenUrl).length} / ${Object.keys(inventario).length}</p>
+</body></html>`);
+});
+
+app.get('/admin/push/test', (req, res) => {
+  const token = req.query.token || (req.headers.authorization || '').replace('Bearer ', '');
+  if (token !== ADMIN_TOKEN) return res.status(401).send('No autorizado');
+  if (!webpush) return res.send('❌ web-push no configurado');
+  if (pushSubscriptions.size === 0) return res.send('❌ Sin suscripciones activas. Abre la app y toca 🔔 primero.');
+  sendPushToAll('🧪 Test MIYU', 'Si ves esto, las notificaciones funcionan ✓')
+    .then(() => res.send(`✅ Notificación de prueba enviada a ${pushSubscriptions.size} dispositivo(s)`))
+    .catch(e => res.send('❌ Error: ' + e.message));
+});
+
 // ============================================================
 // HEALTH CHECK
 // ============================================================
