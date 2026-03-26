@@ -2605,7 +2605,7 @@ function startApp() {
 }
 
 // ── PWA / Push Notifications ──────────────────────────────
-const VAPID_PUB = '${VAPID_PUBLIC_KEY}';
+const VAPID_PUB = ${JSON.stringify((VAPID_PUBLIC_KEY || '').replace(/\s+/g, ''))};
 let swReg = null;
 
 async function registerSW() {
