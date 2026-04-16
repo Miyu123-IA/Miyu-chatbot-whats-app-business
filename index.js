@@ -2693,6 +2693,10 @@ async function togglePush() {
 // ══════════════════════════════════════════════
 let chats = [], activo = null, filtro = 'todos', tabActual = 'perfil', busq = '';
 let _lastChatsKey = null;
+// leidos: { telefono: lastMsgTs } — persiste en localStorage
+let leidos = (() => { try { return JSON.parse(localStorage.getItem('miyu_leidos') || '{}'); } catch(e){ return {}; } })();
+function marcarLeido(id, ts) { leidos[id] = ts || new Date().toISOString(); try { localStorage.setItem('miyu_leidos', JSON.stringify(leidos)); } catch(e){} }
+function esNoLeido(c) { if (!c.msgs || !c.msgs.length) return false; const lastTs = c.msgs.at(-1).ts; const leidoTs = leidos[c.id]; if (!leidoTs) return true; try { return new Date(lastTs) > new Date(leidoTs); } catch(e){ return false; } }
 let inventarioData = [];   // loaded from /admin/inventario
 let pedidosData    = [];   // loaded from /admin/pedidos
 let metricasData   = null; // loaded from /admin/metricas
