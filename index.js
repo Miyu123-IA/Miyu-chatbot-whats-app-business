@@ -2943,7 +2943,7 @@ function renderCenter() {
         : c.msgs.map(m => \`
           <div class="msg \${escapeHtml(m.role)}">
             <div class="msg-who">\${m.role==='bot'?'✦ MIYU':m.role==='agent'?'⚡ AGENTE':safeNombre.toUpperCase()}</div>
-            <div class="bubble">\${m.imagen ? '<img src="' + m.imagen + '" style="max-width:220px;border-radius:8px;display:block;margin-bottom:6px;cursor:zoom-in" onclick="this.style.maxWidth=this.style.maxWidth===\'100%\'?\'220px\':\'100%\'"/>' : ''}\${escapeHtml(m.txt)}</div>
+            <div class="bubble">\${m.imagen ? '<img src="' + m.imagen + '" style="max-width:220px;border-radius:8px;display:block;margin-bottom:6px;cursor:zoom-in" onclick="this.style.maxWidth=this.style.maxWidth===&apos;100%&apos;?&apos;220px&apos;:&apos;100%&apos;"/>' : ''}\${escapeHtml(m.txt)}</div>
             <div class="msg-ts">\${escapeHtml(m.ts)}</div>
           </div>\`).join('')}
     </div>
