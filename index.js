@@ -2391,7 +2391,7 @@ body { height:100%; overflow:hidden; background:var(--c-base);
           </div>
         </div>
         <div class="chat-list" id="chat-list">
-          <div style="padding:24px;text-align:center;color:var(--c-text3);font-size:11.5px;line-height:1.8">
+          <div class="list-empty" style="padding:24px;text-align:center;color:var(--c-text3);font-size:11.5px;line-height:1.8">
             Conectando al servidor…
           </div>
         </div>
@@ -2895,6 +2895,7 @@ function closeRp() {
 
 function selChat(id) {
   activo = chats.find(c => c.id === id);
+  if (activo) { const lastTs = activo.msgs.at(-1)?.ts; marcarLeido(id, lastTs); }
   const rp = document.getElementById('rp');
   rp.style.display = 'flex';
   rp.style.flexDirection = 'column';
