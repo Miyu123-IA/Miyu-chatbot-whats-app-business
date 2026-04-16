@@ -184,7 +184,9 @@ const perfilesClientes = {};  // perfil por teléfono
 const contadorTrolls   = {};  // contador mensajes ofensivos
 const modoPausa        = {};  // true = humano en control
 const rateLimiter      = {};  // timestamps de mensajes por teléfono
-const imagenesEnviadas = {};  // { telefono: Set<productoId> } — evita reenviar la misma foto
+const imagenesEnviadas   = {};  // { telefono: Set<productoId> } — evita reenviar la misma foto
+const mensajesProcesados = new Set(); // deduplicación — evita doble proceso del mismo msg de Meta
+const imagenesClientes   = {};  // { telefono: [{ts, mime, data}] } — thumbnails para el dashboard
 
 // ============================================================
 // SUPABASE — REST API helpers (sin SDK, solo fetch nativo)
@@ -1247,6 +1249,17 @@ app.post("/webhook", async (req, res) => {
     const telefono = mensaje.from;
     const tipo     = mensaje.type;
 
+    // ── DEDUPLICACIÓN — Meta a veces envía el mismo webhook 2x (especialmente con imágenes)
+    const msgId = mensaje.id;
+    if (msgId) {
+      if (mensajesProcesados.has(msgId)) {
+        console.log(`⚠️  Mensaje duplicado ignorado: ${msgId}`);
+        return;
+      }
+      mensajesProcesados.add(msgId);
+      setTimeout(() => mensajesProcesados.delete(msgId), 120000); // limpiar tras 2 min
+    }
+
     // Métricas globales
     metricas.mensajesHoy++;
     const esNuevoCliente = !perfilesClientes[telefono];
@@ -1346,13 +1359,25 @@ app.post("/webhook", async (req, res) => {
         }
         const respuesta = data2.content[0].text;
 
+        // Guardar thumbnail en caché del dashboard antes de liberar memoria
+        if (!imagenesClientes[telefono]) imagenesClientes[telefono] = [];
+        imagenesClientes[telefono].push({
+          ts:   new Date().toISOString(),
+          mime: mimeType,
+          data: `data:${mimeType};base64,${base64Image}`,
+        });
+        // Mantener solo las últimas 10 imágenes por cliente
+        if (imagenesClientes[telefono].length > 10) imagenesClientes[telefono].shift();
+
         // Reemplazar imagen en historial por placeholder para liberar memoria
         const lastIdx = conversaciones[telefono].length - 1;
         if (Array.isArray(conversaciones[telefono][lastIdx]?.content)) {
           conversaciones[telefono][lastIdx] = {
-            role: "user",
+            role:    "user",
             content: "[imagen analizada]",
-            ts: conversaciones[telefono][lastIdx].ts,
+            esImagen: true,
+            imgTs:   new Date().toISOString(),
+            ts:      conversaciones[telefono][lastIdx].ts,
           };
         }
 
@@ -2704,7 +2729,8 @@ async function fetchChats() {
       msgs:     (c.historial || []).map(m => ({
         role:  m.rol === 'user' ? 'user' : (m.texto?.startsWith('[Agente humano]') ? 'agent' : 'bot'),
         txt:   (m.texto || '').replace('[Agente humano]: ', ''),
-        ts:    m.hora || 'hoy'
+        ts:    m.hora || 'hoy',
+        imagen: m.imagen || null
       })),
       perfil:   { esVIP: c.esVIP, notas: c.notas, etapa: c.etapa },
       carrito:  null,
@@ -2733,7 +2759,7 @@ async function fetchChats() {
           if (w) {
             const isAtBottom = w.scrollHeight - w.scrollTop - w.clientHeight < 80;
             const newMsgsHTML = u.msgs.map(m =>
-              \`<div class="msg \${m.role}"><div class="msg-who">\${m.role==='bot'?'✦ MIYU':m.role==='agent'?'⚡ AGENTE':escapeHtml(u.nombre.toUpperCase())}</div><div class="bubble">\${escapeHtml(m.txt)}</div><div class="msg-ts">\${escapeHtml(m.ts)}</div></div>\`
+              \`<div class="msg \${m.role}"><div class="msg-who">\${m.role==='bot'?'✦ MIYU':m.role==='agent'?'⚡ AGENTE':escapeHtml(u.nombre.toUpperCase())}</div><div class="bubble">\${m.imagen ? '<img src="' + m.imagen + '" style="max-width:220px;border-radius:8px;display:block;margin-bottom:6px;cursor:zoom-in" onclick="this.style.maxWidth=this.style.maxWidth===&apos;100%&apos;?&apos;220px&apos;:&apos;100%&apos;"/>' : ''}\${escapeHtml(m.txt)}</div><div class="msg-ts">\${escapeHtml(m.ts)}</div></div>\`
             ).join('');
             if (w.innerHTML !== newMsgsHTML) {
               w.innerHTML = newMsgsHTML;
@@ -2917,7 +2943,7 @@ function renderCenter() {
         : c.msgs.map(m => \`
           <div class="msg \${escapeHtml(m.role)}">
             <div class="msg-who">\${m.role==='bot'?'✦ MIYU':m.role==='agent'?'⚡ AGENTE':safeNombre.toUpperCase()}</div>
-            <div class="bubble">\${escapeHtml(m.txt)}</div>
+            <div class="bubble">\${m.imagen ? '<img src="' + m.imagen + '" style="max-width:220px;border-radius:8px;display:block;margin-bottom:6px;cursor:zoom-in" onclick="this.style.maxWidth=this.style.maxWidth===\'100%\'?\'220px\':\'100%\'"/>' : ''}\${escapeHtml(m.txt)}</div>
             <div class="msg-ts">\${escapeHtml(m.ts)}</div>
           </div>\`).join('')}
     </div>
@@ -3762,15 +3788,30 @@ app.get("/admin/chats", adminAuth, (req, res) => {
       esVIP:         perfil.esVIP || false,
       etapa:         perfil.etapa || "nuevo",
       notas:         perfil.notas || "",
-      historial:     msgs.map((m) => ({
-        rol:   m.role,
-        texto: typeof m.content === "string"
+      historial:     msgs.map((m) => {
+        const esImgPlaceholder = m.esImagen === true || m.content === "[imagen analizada]";
+        const texto = typeof m.content === "string"
           ? m.content
           : typeof m.content?.[0]?.text === "string"
           ? m.content[0].text
-          : "[media]",
-        hora:  m.ts || new Date().toISOString(),
-      })),
+          : "[media]";
+        // Buscar thumbnail correspondiente por timestamp aproximado
+        let imgData = null;
+        if (esImgPlaceholder && imagenesClientes[tel]) {
+          const ts = new Date(m.ts || m.imgTs || 0).getTime();
+          const match = imagenesClientes[tel].find(img => {
+            const diff = Math.abs(new Date(img.ts).getTime() - ts);
+            return diff < 30000; // dentro de 30 segundos
+          });
+          if (match) imgData = match.data;
+        }
+        return {
+          rol:    m.role,
+          texto:  esImgPlaceholder ? "📷 Imagen del cliente" : texto,
+          imagen: imgData,
+          hora:   m.ts || new Date().toISOString(),
+        };
+      }),
     };
   });
 
