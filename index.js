@@ -2692,7 +2692,7 @@ async function togglePush() {
 //  STATE
 // ══════════════════════════════════════════════
 let chats = [], activo = null, filtro = 'todos', tabActual = 'perfil', busq = '';
-let _lastChatsKey = '';
+let _lastChatsKey = null;
 let inventarioData = [];   // loaded from /admin/inventario
 let pedidosData    = [];   // loaded from /admin/pedidos
 let metricasData   = null; // loaded from /admin/metricas
@@ -2729,7 +2729,7 @@ async function fetchChats() {
       msgs:     (c.historial || []).map(m => ({
         role:  m.rol === 'user' ? 'user' : (m.texto?.startsWith('[Agente humano]') ? 'agent' : 'bot'),
         txt:   (m.texto || '').replace('[Agente humano]: ', ''),
-        ts:    m.hora || 'hoy',
+        ts:    m.hora ? (() => { try { const d = new Date(m.hora); const hoy = new Date(); const esHoy = d.toDateString() === hoy.toDateString(); return esHoy ? d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}) : d.toLocaleDateString('es-MX',{day:'2-digit',month:'short'}) + ' ' + d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); } catch(e){ return m.hora; } })() : 'sin hora',
         imagen: m.imagen || null
       })),
       perfil:   { esVIP: c.esVIP, notas: c.notas, etapa: c.etapa },
