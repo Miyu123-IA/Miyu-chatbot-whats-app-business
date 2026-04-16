@@ -2831,7 +2831,8 @@ function rowInner(c) {
   const leadBadge = lead && lead.score > 0
     ? \`<span class="lead-badge lead-\${escapeHtml(lead.etapa||'frio')}">\${lead.score}</span>\`
     : '';
-  return \`<div class="cr-head"><div class="cr-name">\${escapeHtml(c.nombre)}\${leadBadge}</div><div class="cr-time">activo</div></div><div class="cr-preview">\${escapeHtml(c.preview)}</div><div class="cr-tags"><span class="tag \${!c.bot?'tag-human':'tag-bot'}">\${!c.bot?'⚡ humano':'🤖 bot'}</span><span class="tag tag-\${c.tipo==='nuevo'?'nuevo':c.tipo==='frecuente'?'frec':'vip'}">\${escapeHtml(c.tipo)}</span></div>\`;
+  const noLeido = esNoLeido(c);
+  return \`<div class="cr-head"><div class="cr-name">\${escapeHtml(c.nombre)}\${leadBadge}</div><div class="cr-time">activo</div></div><div class="cr-preview">\${escapeHtml(c.preview)}</div><div class="cr-tags"><span class="tag \${!c.bot?'tag-human':'tag-bot'}">\${!c.bot?'⚡ humano':'🤖 bot'}</span><span class="tag tag-\${c.tipo==='nuevo'?'nuevo':c.tipo==='frecuente'?'frec':'vip'}">\${escapeHtml(c.tipo)}</span></div>\${noLeido ? '<div class=\"unread\"></div>' : ''}\`;
 }
 function renderList() {
   const el = document.getElementById('chat-list');
