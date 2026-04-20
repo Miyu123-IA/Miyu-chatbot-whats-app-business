@@ -3621,24 +3621,24 @@ function renderCenter() {
           </div>\`).join('')}
     </div>
 
-    <div class="ibar">
-      <div class="ibar-mode">
+    <div class="composer">
+      <div class="composer-mode">
         <div class="pip \${c.bot?'pip-bot':'pip-human'}"></div>
         \${c.bot ? 'Bot respondiendo automáticamente — toma control para escribir' : '⚡ Estás en control · modo agente'}
       </div>
-      <div class="ibar-row">
-        <textarea class="ibar-input" id="ibar-txt"
+      <div class="composer-row">
+        <textarea class="composer-input" id="ibar-txt"
           placeholder="\${c.bot?'Toma control para escribir…':'Escribe tu mensaje…'}"
           \${c.bot?'disabled':''}
           onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}"
         ></textarea>
-        <label class="ibar-img-btn \${c.bot?'disabled':''}" title="Enviar foto"
+        <label class="composer-icon \${c.bot?'disabled':''}" title="Enviar foto"
           style="cursor:\${c.bot?'not-allowed':'pointer'};opacity:\${c.bot?'.4':'1'}">
           📷
           <input type="file" id="ibar-file" accept="image/*" style="display:none"
             \${c.bot?'disabled':''} onchange="sendImage(this)">
         </label>
-        <button class="ibar-send" onclick="send()" \${c.bot?'disabled':''}>➤</button>
+        <button class="composer-send" onclick="send()" \${c.bot?'disabled':''}>➤</button>
       </div>
     </div>
   \`;
