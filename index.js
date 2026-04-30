@@ -3058,7 +3058,7 @@ html[data-theme="studio"] .tw-fab { background: var(--accent); color: #fff; }
           </div>
         </div>
         <div class="chat-list" id="chat-list">
-          <div style="padding:24px;text-align:center;color:var(--ink-3);font-size:11.5px;line-height:1.8">Conectando al servidor…</div>
+          <div class="connecting-msg" style="padding:24px;text-align:center;color:var(--ink-3);font-size:11.5px;line-height:1.8">Conectando al servidor…</div>
         </div>
       </aside>
       <main class="center" id="center">
@@ -3507,6 +3507,7 @@ function rowInner(c) {
 }
 function renderList() {
   const el = document.getElementById('chat-list');
+  el.querySelector('.connecting-msg')?.remove();
   let list = chats.filter(c => {
     if (filtro === 'bot')   return c.bot;
     if (filtro === 'human') return !c.bot;
@@ -3550,7 +3551,7 @@ function renderList() {
 // ══════════════════════════════════════════════
 //  SELECT CHAT
 // ══════════════════════════════════════════════
-function isMob() { return window.innerWidth <= 768; }
+function isMob() { return window.innerWidth <= 720; }
 
 function backToList() {
   document.getElementById('view-chats')?.classList.remove('chat-open');
@@ -3610,7 +3611,7 @@ function renderCenter() {
       </div>
     </div>
 
-    <div class="msgs-wrap" id="msgs-wrap">
+    <div class="msgs msgs-wrap" id="msgs-wrap">
       \${!c.msgs.length
         ? \`<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--c-text3);font-size:12px">Sin mensajes todavía</div>\`
         : c.msgs.map(m => \`
