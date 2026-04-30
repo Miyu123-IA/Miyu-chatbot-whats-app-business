@@ -2942,6 +2942,7 @@ html[data-theme="studio"] .tw-fab { background: var(--accent); color: #fff; }
   .tb-back { display: flex; }
   .tb-right .btn span { display: none; }
   .tb-right .btn { padding: 8px; }
+  .tb-tag-tipo, .tb-tag-bot { display: none; }
 
   .msgs { padding: 20px 16px; }
   .msg { max-width: 85%; }
@@ -3599,15 +3600,15 @@ function renderCenter() {
           <div class="tb-name">\${safeNombre}</div>
           <div class="tb-phone">\${safeTel}</div>
         </div>
-        <span class="tag \${c.tipo==='vip'?'tag-vip':c.tipo==='frecuente'?'tag-frec':'tag-nuevo'}" style="margin-left:2px">\${safeTipo}</span>
-        <span class="tag \${c.bot?'tag-bot':'tag-human'}">\${c.bot?'🤖 bot':'⚡ control'}</span>
+        <span class="tag tb-tag-tipo \${c.tipo==='vip'?'tag-vip':c.tipo==='frecuente'?'tag-frec':'tag-nuevo'}" style="margin-left:2px">\${safeTipo}</span>
+        <span class="tag tb-tag-bot \${c.bot?'tag-bot':'tag-human'}">\${c.bot?'🤖 bot':'⚡ control'}</span>
       </div>
       <div class="tb-right">
         \${c.bot
-          ? \`<button class="btn btn-blush" data-id="\${safeId}" onclick="takeCtrl(this.dataset.id)">⚡ Tomar Control</button>\`
-          : \`<button class="btn btn-mint"  data-id="\${safeId}" onclick="releaseBot(this.dataset.id)">🤖 Soltar Bot</button>\`}
-        <button class="btn btn-pay"  data-id="\${safeId}" onclick="genLink(this.dataset.id)">💳 Link de Pago</button>
-        <button class="btn btn-rim"  data-id="\${safeId}" onclick="sendCat(this.dataset.id)">📋 Catálogo</button>
+          ? \`<button class="btn btn-blush" data-id="\${safeId}" onclick="takeCtrl(this.dataset.id)">⚡ <span>Tomar Control</span></button>\`
+          : \`<button class="btn btn-mint"  data-id="\${safeId}" onclick="releaseBot(this.dataset.id)">🤖 <span>Soltar Bot</span></button>\`}
+        <button class="btn btn-pay"  data-id="\${safeId}" onclick="genLink(this.dataset.id)">💳 <span>Link de Pago</span></button>
+        <button class="btn btn-rim"  data-id="\${safeId}" onclick="sendCat(this.dataset.id)">📋 <span>Catálogo</span></button>
       </div>
     </div>
 
