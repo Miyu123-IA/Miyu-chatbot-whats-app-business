@@ -1032,6 +1032,7 @@ const TEMPLATES_SEGUIMIENTO = {
   reenganche: `¡Hola! 👋 Te escribimos de Miyu Beauty. Notamos que tenías interés en alguno de nuestros productos ✨ ¿Pudiste encontrar lo que buscabas? Con gusto te ayudamos 🌸`,
   postventa:  `¡Hola! 💖 Esperamos que estés disfrutando tus productos de Miyu Beauty. ¿Cómo te han funcionado? Tu opinión nos ayuda a mejorar 🌟`,
   abandono:   `¡Hola! 🌸 Vimos que estabas interesada en nuestro catálogo. Tenemos envío gratis a toda la zona Mazatlán 😊 ¿Te ayudo a elegir?`,
+  anuncio:    `¡Hola! 💄 Soy Miyu de Miyu Beauty Mzt. Vi que te interesó nuestro anuncio pero no continuaste la conversación. ¿Tienes alguna duda sobre nuestros productos? Estoy aquí para ayudarte 🌸`,
 };
 
 function programarSeguimiento(telefono, tipo, horasDelay, mensajeCustom) {
@@ -1248,6 +1249,36 @@ app.post("/webhook", async (req, res) => {
 
     const telefono = mensaje.from;
     const tipo     = mensaje.type;
+
+    // ── LEAD DE ANUNCIO — Meta envía referral cuando el usuario vino de un Click-to-WhatsApp ad
+    const referral = mensaje.referral;
+    if (referral && !perfilesClientes[telefono]) {
+      // Primer contacto desde un anuncio: guardar origen antes de actualizar perfil
+      actualizarPerfil(telefono);
+      perfilesClientes[telefono].origenAnuncio = {
+        tipo:      referral.source_type || "ad",
+        titular:   referral.headline    || "",
+        cuerpo:    referral.body        || "",
+        ctwaClid:  referral.ctwa_clid   || "",
+        ts:        new Date().toISOString(),
+      };
+      perfilesClientes[telefono].etapa = "lead_anuncio";
+      guardarPerfil(telefono);
+
+      // Saludo especial para leads de anuncio (antes de procesar su primer mensaje)
+      const saludoLead =
+        `¡Hola! 👋 Vi que llegaste desde uno de nuestros anuncios.\n\n` +
+        `Soy *Miyu*, la asistente virtual de *Miyu Beauty Mzt* 💄\n\n` +
+        `Cuéntame, ¿qué estás buscando hoy? Te ayudo a encontrar el producto perfecto para ti. 🌸`;
+      await enviarMensaje(telefono, saludoLead);
+
+      // Programar seguimiento si no responde en 24h
+      programarSeguimiento(telefono, "anuncio", 24);
+
+      // Si el primer mensaje del lead es texto lo procesamos normal abajo,
+      // si es vacío (solo abrió el chat) terminamos aquí.
+      if (tipo !== "text" || !mensaje.text?.body) return;
+    }
 
     // ── DEDUPLICACIÓN — Meta a veces envía el mismo webhook 2x (especialmente con imágenes)
     const msgId = mensaje.id;
@@ -3404,7 +3435,7 @@ async function fetchChats() {
         ts:    m.hora ? (() => { try { const d = new Date(m.hora); const hoy = new Date(); const esHoy = d.toDateString() === hoy.toDateString(); return esHoy ? d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}) : d.toLocaleDateString('es-MX',{day:'2-digit',month:'short'}) + ' ' + d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); } catch(e){ return m.hora; } })() : 'sin hora',
         imagen: m.imagen || null
       })),
-      perfil:   { esVIP: c.esVIP, notas: c.notas, etapa: c.etapa },
+      perfil:   { esVIP: c.esVIP, notas: c.notas, etapa: c.etapa, origenAnuncio: c.origenAnuncio || null },
       carrito:  null,
       preview:  c.ultimoMensaje || 'Sin mensajes aún',
       mensajesCount: c.mensajes || 0,
@@ -3504,7 +3535,8 @@ function rowInner(c) {
     ? \`<span class="lead-badge lead-\${escapeHtml(lead.etapa||'frio')}">\${lead.score}</span>\`
     : '';
   const noLeido = esNoLeido(c);
-  return \`<div class="cr-head"><div class="cr-name">\${escapeHtml(c.nombre)}\${leadBadge}</div><div class="cr-time">activo</div></div><div class="cr-preview">\${escapeHtml(c.preview)}</div><div class="cr-tags"><span class="tag \${!c.bot?'tag-human':'tag-bot'}">\${!c.bot?'⚡ humano':'🤖 bot'}</span><span class="tag tag-\${c.tipo==='nuevo'?'nuevo':c.tipo==='frecuente'?'frec':'vip'}">\${escapeHtml(c.tipo)}</span></div>\${noLeido ? '<div class=\"unread\"></div>' : ''}\`;
+  const anuncioBadge = c.perfil?.origenAnuncio ? '<span class="tag" style="background:#fff3cd;color:#856404;border-color:#ffc107;font-size:10px;padding:1px 5px">📣</span>' : '';
+  return \`<div class="cr-head"><div class="cr-name">\${escapeHtml(c.nombre)}\${leadBadge}</div><div class="cr-time">activo</div></div><div class="cr-preview">\${escapeHtml(c.preview)}</div><div class="cr-tags"><span class="tag \${!c.bot?'tag-human':'tag-bot'}">\${!c.bot?'⚡ humano':'🤖 bot'}</span><span class="tag tag-\${c.tipo==='nuevo'?'nuevo':c.tipo==='frecuente'?'frec':'vip'}">\${escapeHtml(c.tipo)}</span>\${anuncioBadge}</div>\${noLeido ? '<div class=\"unread\"></div>' : ''}\`;
 }
 function renderList() {
   const el = document.getElementById('chat-list');
@@ -3602,6 +3634,7 @@ function renderCenter() {
         </div>
         <span class="tag tb-tag-tipo \${c.tipo==='vip'?'tag-vip':c.tipo==='frecuente'?'tag-frec':'tag-nuevo'}" style="margin-left:2px">\${safeTipo}</span>
         <span class="tag tb-tag-bot \${c.bot?'tag-bot':'tag-human'}">\${c.bot?'🤖 bot':'⚡ control'}</span>
+        \${c.perfil?.origenAnuncio ? '<span class="tag" style="background:#fff3cd;color:#856404;border-color:#ffc107;margin-left:2px">📣 Anuncio</span>' : ''}
       </div>
       <div class="tb-right">
         \${c.bot
