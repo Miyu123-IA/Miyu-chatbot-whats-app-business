@@ -1239,15 +1239,134 @@ app.post("/webhook", async (req, res) => {
     const body = req.body;
     if (!body?.entry?.[0]?.changes?.[0]?.value?.messages) return;
 
-    const value   = body.entry[0].changes[0].value;
-    const mensajes = value.messages;
+    const mensajes = body.entry[0].changes[0].value.messages;
     if (!Array.isArray(mensajes) || mensajes.length === 0) return;
 
-    const mensaje = mensajes[0];
-    // Validar que el teléfono es un string no vacío
-    if (!mensaje || typeof mensaje.from !== "string" || !mensaje.from) return;
+    for (const mensaje of mensajes) {
+      // Validar que el teléfono es un string no vacío
+      if (!mensaje || typeof mensaje.from !== "string" || !mensaje.from) continue;
 
+      // DEDUPLICACIÓN — Meta a veces envía el mismo webhook 2x (especialmente con imágenes)
+      const msgId = mensaje.id;
+      if (msgId) {
+        if (mensajesProcesados.has(msgId)) {
+          console.log(`⚠️  Mensaje duplicado ignorado: ${msgId}`);
+          continue;
+        }
+        mensajesProcesados.add(msgId);
+        setTimeout(() => mensajesProcesados.delete(msgId), 120000); // limpiar tras 2 min
+      }
+
+      encolarMensaje(mensaje);
+    }
+  } catch (err) {
+    console.error("Error en webhook:", err.message);
+  }
+});
+
+// ============================================================
+// AGRUPAR MENSAJES SEGUIDOS DEL MISMO CLIENTE
+// Si el cliente manda foto + "¿la tienen?", esperamos unos segundos y
+// procesamos todo junto, para que Miyu vea la foto ANTES de contestar.
+// Cada cliente se procesa en orden (un lote a la vez).
+// ============================================================
+const ESPERA_AGRUPAR_MS = 4000;   // silencio que esperamos antes de contestar
+const ESPERA_MAX_MS     = 12000;  // nunca esperar más que esto desde el primer mensaje
+const bufferMensajes    = {};     // { telefono: { items, timer, inicio } }
+const colaPorTelefono   = {};     // { telefono: Promise } — lotes en orden
+
+function encolarMensaje(mensaje) {
+  const tel = mensaje.from;
+  let b = bufferMensajes[tel];
+  if (!b) b = bufferMensajes[tel] = { items: [], timer: null, inicio: Date.now() };
+  b.items.push(mensaje);
+  clearTimeout(b.timer);
+  const espera = Math.max(0, Math.min(ESPERA_AGRUPAR_MS, b.inicio + ESPERA_MAX_MS - Date.now()));
+  b.timer = setTimeout(() => {
+    delete bufferMensajes[tel];
+    colaPorTelefono[tel] = (colaPorTelefono[tel] || Promise.resolve())
+      .then(() => procesarLote(b.items))
+      .catch((e) => console.error("Error procesando lote:", e.message));
+  }, espera);
+}
+
+async function procesarLote(items) {
+  const referral = items.find((m) => m.referral)?.referral;
+  const imagenes = items.filter((m) => m.type === "image");
+  const textos   = items.filter((m) => m.type === "text" && typeof m.text?.body === "string" && m.text.body.trim());
+  const otros    = items.filter((m) => m.type !== "image" && !textos.includes(m));
+
+  // Audios, ubicaciones, etc. se procesan uno por uno como antes
+  for (const m of otros) await procesarMensaje(m);
+
+  if (imagenes.length > 0) {
+    // Foto(s) + texto(s) → una sola respuesta que ya vio la imagen
+    const principal = referral ? { ...imagenes[0], referral } : imagenes[0];
+    await procesarMensaje(principal, {
+      imagenesExtra: imagenes.slice(1),
+      textosExtra:   textos.map((t) => t.text.body),
+    });
+  } else if (textos.length > 0) {
+    // Varios textos seguidos → una sola respuesta
+    const unido = {
+      ...textos[0],
+      ...(referral ? { referral } : {}),
+      text: { body: textos.map((t) => t.text.body).join("\n") },
+    };
+    await procesarMensaje(unido);
+  }
+}
+
+// Descarga una media de WhatsApp (imagen/audio) → { buffer, mime }
+async function descargarMediaWA(mediaId) {
+  const mediaRes = await fetchConTimeout(
+    `https://graph.facebook.com/v18.0/${mediaId}`,
+    { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
+  );
+  const mediaData = await mediaRes.json();
+  if (!mediaData.url) throw new Error("URL de media no disponible");
+  const descarga = await fetchConTimeout(mediaData.url, {
+    headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+  });
+  if (!descarga.ok) throw new Error(`Descarga de media HTTP ${descarga.status}`);
+  const buffer = Buffer.from(await descarga.arrayBuffer());
+  return { buffer, mime: mediaData.mime_type || "image/jpeg" };
+}
+
+// Fotos que quedaron atoradas en el historial como bloques base64 (bug anterior):
+// se pasan a la caché del dashboard y se reemplazan por un placeholder ligero.
+function compactarImagenesViejas(telefono) {
+  const conv = conversaciones[telefono];
+  if (!Array.isArray(conv)) return false;
+  let cambio = false;
+  conv.forEach((m, i) => {
+    if (m.role !== "user" || !Array.isArray(m.content)) return;
+    const ids = [];
+    m.content.forEach((bloque, j) => {
+      if (bloque?.type !== "image" || bloque.source?.type !== "base64") return;
+      const id = `legacy-${Date.parse(m.ts || 0) || i}-${j}`;
+      if (!imagenesClientes[telefono]) imagenesClientes[telefono] = [];
+      imagenesClientes[telefono].push({
+        id, ts: m.ts || new Date().toISOString(), mime: bloque.source.media_type,
+        data: `data:${bloque.source.media_type};base64,${bloque.source.data}`,
+      });
+      ids.push(id);
+    });
+    if (!ids.length) return;
+    conv[i] = {
+      role: "user", content: "[imagen analizada]", esImagen: true,
+      imgIds: ids, imgTs: m.ts, ts: m.ts,
+    };
+    cambio = true;
+  });
+  if (imagenesClientes[telefono]?.length > 10) imagenesClientes[telefono] = imagenesClientes[telefono].slice(-10);
+  return cambio;
+}
+
+async function procesarMensaje(mensaje, opts = {}) {
+  try {
     const telefono = mensaje.from;
+    if (compactarImagenesViejas(telefono)) guardarConversacion(telefono);
     const tipo     = mensaje.type;
 
     // ── LEAD DE ANUNCIO — Meta envía referral cuando el usuario vino de un Click-to-WhatsApp ad
@@ -1275,20 +1394,10 @@ app.post("/webhook", async (req, res) => {
       // Programar seguimiento si no responde en 24h
       programarSeguimiento(telefono, "anuncio", 24);
 
-      // Si el primer mensaje del lead es texto lo procesamos normal abajo,
-      // si es vacío (solo abrió el chat) terminamos aquí.
-      if (tipo !== "text" || !mensaje.text?.body) return;
-    }
-
-    // ── DEDUPLICACIÓN — Meta a veces envía el mismo webhook 2x (especialmente con imágenes)
-    const msgId = mensaje.id;
-    if (msgId) {
-      if (mensajesProcesados.has(msgId)) {
-        console.log(`⚠️  Mensaje duplicado ignorado: ${msgId}`);
-        return;
-      }
-      mensajesProcesados.add(msgId);
-      setTimeout(() => mensajesProcesados.delete(msgId), 120000); // limpiar tras 2 min
+      // Si el primer mensaje del lead trae contenido (texto, foto, audio) lo procesamos
+      // normal abajo; si es vacío (solo abrió el chat) terminamos aquí.
+      const traeContenido = tipo === "text" ? !!mensaje.text?.body : ["image", "audio"].includes(tipo);
+      if (!traeContenido) return;
     }
 
     // Métricas globales
@@ -1310,6 +1419,20 @@ app.post("/webhook", async (req, res) => {
         actualizarLeadScore(telefono, mensaje.text.body);
         // Si respondió → cancelar seguimientos pendientes
         cancelarSeguimientos(telefono);
+      } else if (tipo === "image") {
+        const imgsPausa  = [mensaje, ...(opts.imagenesExtra || [])].filter((m) => m.image?.id);
+        const textoPausa = [...imgsPausa.map((m) => m.image.caption), ...(opts.textosExtra || [])]
+          .filter(Boolean).join("\n").trim();
+        if (!conversaciones[telefono]) conversaciones[telefono] = [];
+        const ahora = new Date().toISOString();
+        conversaciones[telefono].push({
+          role: "user",
+          content: textoPausa ? `[imagen analizada] ${textoPausa}` : "[imagen analizada]",
+          esImagen: true, imgIds: imgsPausa.map((m) => m.image.id), imgTs: ahora, ts: ahora,
+        });
+        guardarConversacion(telefono);
+        if (textoPausa) actualizarLeadScore(telefono, textoPausa);
+        cancelarSeguimientos(telefono);
       }
       return;
     }
@@ -1330,38 +1453,43 @@ app.post("/webhook", async (req, res) => {
       cancelarSeguimientos(telefono);
 
     } else if (tipo === "image") {
+      // Foto(s) del cliente + lo que escribió junto (pie de foto o mensajes seguidos)
+      const imgsMsg = [mensaje, ...(opts.imagenesExtra || [])].filter((m) => m.image?.id);
+      const textoCliente = [...imgsMsg.map((m) => m.image.caption), ...(opts.textosExtra || [])]
+        .filter(Boolean).join("\n").trim();
+      if (textoCliente) actualizarLeadScore(telefono, textoCliente);
+      cancelarSeguimientos(telefono);
       try {
-        if (!mensaje.image || !mensaje.image.id) throw new Error("imagen inválida");
-        const imageId  = mensaje.image.id;
-        const mediaRes = await fetchConTimeout(
-          `https://graph.facebook.com/v18.0/${imageId}`,
-          { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
-        );
-        const mediaData = await mediaRes.json();
-        if (!mediaData.url) throw new Error("URL de imagen no disponible");
+        if (imgsMsg.length === 0) throw new Error("imagen inválida");
+        const imgs = [];
+        for (const m of imgsMsg) {
+          const { buffer, mime } = await descargarMediaWA(m.image.id);
+          imgs.push({ id: m.image.id, mime: m.image.mime_type || mime, base64: buffer.toString("base64") });
+        }
+        const mimeType    = imgs[0].mime;
+        const base64Image = imgs[0].base64;
+        const variasFotos = imgs.length > 1;
 
-        const imageDownload = await fetchConTimeout(mediaData.url, {
-          headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
-        });
-        const imageBuffer = await imageDownload.arrayBuffer();
-        const base64Image = Buffer.from(imageBuffer).toString("base64");
-        const mimeType    = mensaje.image.mime_type || "image/jpeg";
+        const instruccion = textoCliente
+          ? `El cliente envió ${variasFotos ? `${imgs.length} imágenes` : "esta imagen"} junto con este mensaje: "${textoCliente}". ` +
+            `Mira la imagen y responde a lo que pregunta. Si es un producto, identifícalo y busca si lo tenemos en el inventario. ` +
+            `Si es una foto de piel o rostro, recomienda productos. Si es comprobante de pago, confírmalo.`
+          : `Analiza ${variasFotos ? "estas imágenes" : "esta imagen"}. Si es un producto, identifícalo y busca si lo tenemos en el inventario. ` +
+            `Si es una foto de piel o rostro, recomienda productos. Si es comprobante de pago, confírmalo.`;
 
         if (!conversaciones[telefono]) conversaciones[telefono] = [];
-        conversaciones[telefono].push({
+        const entradaImagen = {
           role: "user",
           content: [
-            {
+            ...imgs.map((img) => ({
               type: "image",
-              source: { type: "base64", media_type: mimeType, data: base64Image },
-            },
-            {
-              type: "text",
-              text: "Analiza esta imagen. Si es una foto de piel o rostro, recomienda productos. Si es comprobante de pago, confírmalo.",
-            },
+              source: { type: "base64", media_type: img.mime, data: img.base64 },
+            })),
+            { type: "text", text: instruccion },
           ],
           ts: new Date().toISOString(),
-        });
+        };
+        conversaciones[telefono].push(entradaImagen);
         aplicarLimiteHistorial(telefono, 20);
 
         const res2 = await fetchConTimeout("https://api.anthropic.com/v1/messages", {
@@ -1377,7 +1505,7 @@ app.post("/webhook", async (req, res) => {
             system: SYSTEM_PROMPT,
             messages: conversaciones[telefono].map(({ role, content }) => ({ role, content })),
           }),
-        });
+        }, 40000); // 40 s — analizar imágenes tarda más que texto
 
         const data2 = await res2.json();
         if (
@@ -1390,25 +1518,32 @@ app.post("/webhook", async (req, res) => {
         }
         const respuesta = data2.content[0].text;
 
-        // Guardar thumbnail en caché del dashboard antes de liberar memoria
+        // Guardar en caché del dashboard (si se reinicia el server, se piden a WhatsApp por id)
         if (!imagenesClientes[telefono]) imagenesClientes[telefono] = [];
-        imagenesClientes[telefono].push({
-          ts:   new Date().toISOString(),
-          mime: mimeType,
-          data: `data:${mimeType};base64,${base64Image}`,
-        });
+        for (const img of imgs) {
+          imagenesClientes[telefono].push({
+            id:   img.id,
+            ts:   entradaImagen.ts,
+            mime: img.mime,
+            data: `data:${img.mime};base64,${img.base64}`,
+          });
+        }
         // Mantener solo las últimas 10 imágenes por cliente
-        if (imagenesClientes[telefono].length > 10) imagenesClientes[telefono].shift();
+        if (imagenesClientes[telefono].length > 10) {
+          imagenesClientes[telefono] = imagenesClientes[telefono].slice(-10);
+        }
 
-        // Reemplazar imagen en historial por placeholder para liberar memoria
-        const lastIdx = conversaciones[telefono].length - 1;
-        if (Array.isArray(conversaciones[telefono][lastIdx]?.content)) {
-          conversaciones[telefono][lastIdx] = {
-            role:    "user",
-            content: "[imagen analizada]",
+        // Reemplazar la imagen en el historial por un placeholder ligero.
+        // Se busca por referencia (no por posición) para no pisar otro mensaje.
+        const idxImg = conversaciones[telefono].indexOf(entradaImagen);
+        if (idxImg !== -1) {
+          conversaciones[telefono][idxImg] = {
+            role:     "user",
+            content:  textoCliente ? `[imagen analizada] ${textoCliente}` : "[imagen analizada]",
             esImagen: true,
-            imgTs:   new Date().toISOString(),
-            ts:      conversaciones[telefono][lastIdx].ts,
+            imgIds:   imgs.map((img) => img.id),
+            imgTs:    new Date().toISOString(),
+            ts:       entradaImagen.ts,
           };
         }
 
@@ -1441,7 +1576,13 @@ app.post("/webhook", async (req, res) => {
         return;
       } catch (imgErr) {
         console.error("Error procesando imagen:", imgErr.message);
-        textoUsuario = "[El cliente envió una imagen que no pude procesar]";
+        // Si la imagen quedó a medias en el historial, quitarla
+        const conv = conversaciones[telefono] || [];
+        const idxRoto = conv.findIndex((m) => m.role === "user" && Array.isArray(m.content));
+        if (idxRoto !== -1) conv.splice(idxRoto, 1);
+        textoUsuario = textoCliente
+          ? `[El cliente envió una imagen que no pude ver] ${textoCliente}`
+          : "[El cliente envió una imagen que no pude procesar]";
       }
 
     } else if (tipo === "audio") {
@@ -1528,9 +1669,9 @@ app.post("/webhook", async (req, res) => {
 
 
   } catch (err) {
-    console.error("Error en webhook:", err.message);
+    console.error("Error procesando mensaje:", err.message);
   }
-});
+}
 
 // ============================================================
 // DASHBOARD HTML INCRUSTADO
@@ -3433,7 +3574,9 @@ async function fetchChats() {
         role:  m.rol === 'user' ? 'user' : (m.texto?.startsWith('[Agente humano]') ? 'agent' : 'bot'),
         txt:   (m.texto || '').replace('[Agente humano]: ', ''),
         ts:    m.hora ? (() => { try { const d = new Date(m.hora); const hoy = new Date(); const esHoy = d.toDateString() === hoy.toDateString(); return esHoy ? d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}) : d.toLocaleDateString('es-MX',{day:'2-digit',month:'short'}) + ' ' + d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); } catch(e){ return m.hora; } })() : 'sin hora',
-        imagen: m.imagen || null
+        imagen: m.imagen || null,
+        imagenes: (m.imagenes || (m.imagen ? [m.imagen] : [])).map(src =>
+          src.startsWith('/admin/media/') ? src + '?token=' + encodeURIComponent(adminToken) : src)
       })),
       perfil:   { esVIP: c.esVIP, notas: c.notas, etapa: c.etapa, origenAnuncio: c.origenAnuncio || null },
       carrito:  null,
@@ -3462,7 +3605,7 @@ async function fetchChats() {
           if (w) {
             const isAtBottom = w.scrollHeight - w.scrollTop - w.clientHeight < 80;
             const newMsgsHTML = u.msgs.map(m =>
-              \`<div class="msg \${m.role}"><div class="msg-who">\${m.role==='bot'?'✦ MIYU':m.role==='agent'?'⚡ AGENTE':escapeHtml(u.nombre.toUpperCase())}</div><div class="bubble">\${m.imagen ? '<img src="' + m.imagen + '" style="max-width:220px;border-radius:8px;display:block;margin-bottom:6px;cursor:zoom-in" onclick="this.style.maxWidth=this.style.maxWidth===&apos;100%&apos;?&apos;220px&apos;:&apos;100%&apos;"/>' : ''}\${escapeHtml(m.txt)}</div><div class="msg-ts">\${escapeHtml(m.ts)}</div></div>\`
+              \`<div class="msg \${m.role}"><div class="msg-who">\${m.role==='bot'?'✦ MIYU':m.role==='agent'?'⚡ AGENTE':escapeHtml(u.nombre.toUpperCase())}</div><div class="bubble">\${(m.imagenes || (m.imagen ? [m.imagen] : [])).map(src => '<img src="' + src + '" loading="lazy" style="max-width:220px;border-radius:8px;display:block;margin-bottom:6px;cursor:zoom-in" onclick="this.style.maxWidth=this.style.maxWidth===&apos;100%&apos;?&apos;220px&apos;:&apos;100%&apos;"/>').join('')}\${escapeHtml(m.txt)}</div><div class="msg-ts">\${escapeHtml(m.ts)}</div></div>\`
             ).join('');
             if (w.innerHTML !== newMsgsHTML) {
               w.innerHTML = newMsgsHTML;
@@ -3651,7 +3794,7 @@ function renderCenter() {
         : c.msgs.map(m => \`
           <div class="msg \${escapeHtml(m.role)}">
             <div class="msg-who">\${m.role==='bot'?'✦ MIYU':m.role==='agent'?'⚡ AGENTE':safeNombre.toUpperCase()}</div>
-            <div class="bubble">\${m.imagen ? '<img src="' + m.imagen + '" style="max-width:220px;border-radius:8px;display:block;margin-bottom:6px;cursor:zoom-in" onclick="this.style.maxWidth=this.style.maxWidth===&apos;100%&apos;?&apos;220px&apos;:&apos;100%&apos;"/>' : ''}\${escapeHtml(m.txt)}</div>
+            <div class="bubble">\${(m.imagenes || (m.imagen ? [m.imagen] : [])).map(src => '<img src="' + src + '" loading="lazy" style="max-width:220px;border-radius:8px;display:block;margin-bottom:6px;cursor:zoom-in" onclick="this.style.maxWidth=this.style.maxWidth===&apos;100%&apos;?&apos;220px&apos;:&apos;100%&apos;"/>').join('')}\${escapeHtml(m.txt)}</div>
             <div class="msg-ts">\${escapeHtml(m.ts)}</div>
           </div>\`).join('')}
     </div>
@@ -4503,17 +4646,74 @@ app.post("/admin/enviar-imagen", adminAuth, async (req, res) => {
   }
 });
 
+// Convierte un mensaje del historial en { texto, imagenes } para el dashboard
+function mensajeParaDashboard(tel, m) {
+  const cache = imagenesClientes[tel] || [];
+  // Imagen todavía en bloques base64 (se está analizando o quedó del bug anterior)
+  if (Array.isArray(m.content)) {
+    const imagenes = m.content
+      .filter((b) => b?.type === "image" && b.source?.type === "base64")
+      .map((b) => `data:${b.source.media_type};base64,${b.source.data}`);
+    const texto = m.content.filter((b) => b?.type === "text").map((b) => b.text).join(" ");
+    return imagenes.length
+      ? { texto: "📷 Imagen del cliente", imagenes }
+      : { texto: texto || "[media]", imagenes: [] };
+  }
+  const contenido = typeof m.content === "string" ? m.content : "";
+  const esImg = m.esImagen === true || contenido.startsWith("[imagen analizada]");
+  if (!esImg) return { texto: contenido, imagenes: [] };
+
+  const extra = contenido.replace("[imagen analizada]", "").trim();
+  let imagenes = [];
+  if (Array.isArray(m.imgIds) && m.imgIds.length) {
+    imagenes = m.imgIds
+      .map((id) => cache.find((img) => img.id === id)?.data ||
+        (/^\d+$/.test(id) ? `/admin/media/${id}` : null))
+      .filter(Boolean);
+  } else {
+    // Mensajes viejos sin id: buscar por hora aproximada en la caché
+    const ts = new Date(m.ts || m.imgTs || 0).getTime();
+    const match = cache.find((img) => Math.abs(new Date(img.ts).getTime() - ts) < 30000);
+    if (match) imagenes = [match.data];
+  }
+  return {
+    texto: (imagenes.length > 1 ? `📷 ${imagenes.length} imágenes del cliente` : "📷 Imagen del cliente") +
+      (extra ? `\n${extra}` : ""),
+    imagenes,
+  };
+}
+
+// Sirve una imagen que mandó un cliente (caché o descarga de WhatsApp, ~30 días)
+app.get("/admin/media/:id", adminAuth, async (req, res) => {
+  const id = String(req.params.id || "");
+  if (!/^\d+$/.test(id)) return res.status(400).json({ ok: false, error: "id inválido" });
+  try {
+    for (const lista of Object.values(imagenesClientes)) {
+      const img = lista.find((i) => i.id === id);
+      if (img) {
+        const b64 = img.data.split(",")[1] || "";
+        res.set("Content-Type", img.mime || "image/jpeg");
+        res.set("Cache-Control", "private, max-age=86400");
+        return res.send(Buffer.from(b64, "base64"));
+      }
+    }
+    const { buffer, mime } = await descargarMediaWA(id);
+    res.set("Content-Type", mime);
+    res.set("Cache-Control", "private, max-age=86400");
+    res.send(buffer);
+  } catch (e) {
+    console.error(`/admin/media ${id}:`, e.message);
+    res.status(404).json({ ok: false, error: "Imagen no disponible (WhatsApp la guarda ~30 días)" });
+  }
+});
+
 app.get("/admin/chats", adminAuth, (req, res) => {
   const chats = Object.keys(conversaciones).map((tel) => {
+    if (compactarImagenesViejas(tel)) guardarConversacion(tel);
     const msgs   = conversaciones[tel] || [];
     const perfil = perfilesClientes[tel] || {};
     const ultimo = msgs[msgs.length - 1];
-    const ultimoTexto =
-      typeof ultimo?.content === "string"
-        ? ultimo.content
-        : typeof ultimo?.content?.[0]?.text === "string"
-        ? ultimo.content[0].text
-        : "[media]";
+    const ultimoTexto = ultimo ? mensajeParaDashboard(tel, ultimo).texto : "";
 
     return {
       telefono:      tel,
@@ -4526,27 +4726,13 @@ app.get("/admin/chats", adminAuth, (req, res) => {
       etapa:         perfil.etapa || "nuevo",
       notas:         perfil.notas || "",
       historial:     msgs.map((m) => {
-        const esImgPlaceholder = m.esImagen === true || m.content === "[imagen analizada]";
-        const texto = typeof m.content === "string"
-          ? m.content
-          : typeof m.content?.[0]?.text === "string"
-          ? m.content[0].text
-          : "[media]";
-        // Buscar thumbnail correspondiente por timestamp aproximado
-        let imgData = null;
-        if (esImgPlaceholder && imagenesClientes[tel]) {
-          const ts = new Date(m.ts || m.imgTs || 0).getTime();
-          const match = imagenesClientes[tel].find(img => {
-            const diff = Math.abs(new Date(img.ts).getTime() - ts);
-            return diff < 30000; // dentro de 30 segundos
-          });
-          if (match) imgData = match.data;
-        }
+        const { texto, imagenes } = mensajeParaDashboard(tel, m);
         return {
-          rol:    m.role,
-          texto:  esImgPlaceholder ? "📷 Imagen del cliente" : texto,
-          imagen: imgData,
-          hora:   m.ts || new Date().toISOString(),
+          rol:      m.role,
+          texto,
+          imagen:   imagenes[0] || null,
+          imagenes,
+          hora:     m.ts || new Date().toISOString(),
         };
       }),
     };
