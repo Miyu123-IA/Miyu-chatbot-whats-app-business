@@ -335,11 +335,11 @@ async function guardarProductoDB(id) {
 // ── INVENTARIO ──────────────────────────────────────────────
 const inventario = {
   "beauty-of-joseon-sun": { id:"beauty-of-joseon-sun", nombre:"Beauty of Joseon Relief Sun Rice + Probiotics SPF50+ PA++++", precio:550, stock:10, stockMinimo:3, categoria:"solar",      descripcion:"Viral en TikTok. Acabado sérico, no deja residuo blanco. Ideal piel mixta/grasa.", imagenUrl:"", activo:true, vendidos:0 },
-  "biore-uv-aqua":        { id:"biore-uv-aqua",        nombre:"Bioré UV Aqua Rich Watery Essence SPF50+",                   precio:475, stock:8,  stockMinimo:3, categoria:"solar",      descripcion:"Clásico japonés. Textura de agua, se absorbe al instante. Perfecta bajo maquillaje.", imagenUrl:"", activo:true, vendidos:0 },
+  "biore-uv-aqua":        { id:"biore-uv-aqua",        nombre:"Bioré UV Aqua Rich Watery Essence SPF50+",                   precio:300, stock:8,  stockMinimo:3, categoria:"solar",      descripcion:"Clásico japonés. Textura de agua, se absorbe al instante. Perfecta bajo maquillaje.", imagenUrl:"", activo:true, vendidos:0 },
   "shiseido-aqua":        { id:"shiseido-aqua",        nombre:"Mascarilla Shiseido Aqua Intensive",                          precio:500, stock:6,  stockMinimo:2, categoria:"capilar",    descripcion:"Hidratación profunda para cabello seco o dañado.", imagenUrl:"", activo:true, vendidos:0 },
   "honey-aceite-capilar": { id:"honey-aceite-capilar", nombre:"&Honey Deep Moist Aceite Capilar",                            precio:500, stock:7,  stockMinimo:2, categoria:"capilar",    descripcion:"Superventas en Japón. Brillo tipo K-pop sin residuo graso.", imagenUrl:"", activo:true, vendidos:0 },
   "cer100-hair-filler":   { id:"cer100-hair-filler",   nombre:"CER-100 Hair Filler Ceramide Treatment",                      precio:395, stock:9,  stockMinimo:3, categoria:"capilar",    descripcion:"Tratamiento de ceramidas. Rellena fibra capilar dañada.", imagenUrl:"", activo:true, vendidos:0 },
-  "tirtir-cushion":       { id:"tirtir-cushion",       nombre:"Tirtir Cushion Mask Fit Red (varios tonos)",                  precio:800, stock:5,  stockMinimo:2, categoria:"maquillaje", descripcion:"El cushion más famoso de K-beauty. Cobertura media-alta, acabado luminoso.", imagenUrl:"", activo:true, vendidos:0 },
+  "tirtir-cushion":       { id:"tirtir-cushion",       nombre:"Tirtir Cushion Mask Fit Red (varios tonos)",                  precio:600, stock:5,  stockMinimo:2, categoria:"maquillaje", descripcion:"El cushion más famoso de K-beauty. Cobertura media-alta, acabado luminoso.", imagenUrl:"", activo:true, vendidos:0 },
   "heroine-mascara":      { id:"heroine-mascara",      nombre:"Mascara Heroine Make Long & Curl",                            precio:450, stock:8,  stockMinimo:3, categoria:"maquillaje", descripcion:"Ícono del maquillaje japonés. Alarga y riza, resistente al agua.", imagenUrl:"", activo:true, vendidos:0 },
   "removedor-bifasico":   { id:"removedor-bifasico",   nombre:"Removedor de Maquillaje Bifásico",                            precio:450, stock:10, stockMinimo:3, categoria:"maquillaje", descripcion:"Elimina maquillaje waterproof sin restregar.", imagenUrl:"", activo:true, vendidos:0 },
   "delineador-waterproof":{ id:"delineador-waterproof",nombre:"Delineador Waterproof Ultra Fino",                            precio:450, stock:12, stockMinimo:3, categoria:"maquillaje", descripcion:"Trazo de precisión, no corre todo el día.", imagenUrl:"", activo:true, vendidos:0 },
@@ -349,7 +349,7 @@ const inventario = {
   "dynasty-cream":        { id:"dynasty-cream",        nombre:"Dynasty Cream Lifting & Firming",                             precio:665, stock:5,  stockMinimo:2, categoria:"skincare",   descripcion:"Efecto tensor y reafirmante. Ideal pieles maduras.", imagenUrl:"", activo:true, vendidos:0 },
   "boj-parches-ojos":     { id:"boj-parches-ojos",     nombre:"Parches de Ojos Beauty of Joseon",                           precio:620, stock:8,  stockMinimo:3, categoria:"skincare",   descripcion:"Desinflamar contorno de ojos en 20 minutos.", imagenUrl:"", activo:true, vendidos:0 },
   "mixsoon-bean-eye":     { id:"mixsoon-bean-eye",     nombre:"Mixsoon Bean Eye Cream",                                      precio:625, stock:6,  stockMinimo:2, categoria:"skincare",   descripcion:"Extracto de soya. Hidratación y luminosidad bajo ojos.", imagenUrl:"", activo:true, vendidos:0 },
-  "medicube-pdrn":        { id:"medicube-pdrn",        nombre:"Medicube PDRN Peptide Serum",                                 precio:695, stock:5,  stockMinimo:2, categoria:"skincare",   descripcion:"Tecnología de clínicas coreanas. Estimula regeneración celular.", imagenUrl:"", activo:true, vendidos:0 },
+  "medicube-pdrn":        { id:"medicube-pdrn",        nombre:"Medicube PDRN Peptide Serum",                                 precio:500, stock:5,  stockMinimo:2, categoria:"skincare",   descripcion:"Tecnología de clínicas coreanas. Estimula regeneración celular.", imagenUrl:"", activo:true, vendidos:0 },
   "medicube-kojic":       { id:"medicube-kojic",       nombre:"Medicube Kojic Acid Serum",                                   precio:695, stock:5,  stockMinimo:2, categoria:"skincare",   descripcion:"Ácido kójico para manchas e hiperpigmentación.", imagenUrl:"", activo:true, vendidos:0 },
   "anua-heartleaf-set":   { id:"anua-heartleaf-set",   nombre:"Set Anua Heartleaf (limpiador + tónico)",                    precio:720, stock:6,  stockMinimo:2, categoria:"skincare",   descripcion:"Marca viral k-beauty. Calma, hidrata, trata acné.", imagenUrl:"", activo:true, vendidos:0 },
   "mixsoon-glass-skin":   { id:"mixsoon-glass-skin",   nombre:"Mixsoon Glass Skin Kit",                                      precio:820, stock:4,  stockMinimo:2, categoria:"skincare",   descripcion:"Kit completo para el efecto glass skin coreano.", imagenUrl:"", activo:true, vendidos:0 },
@@ -442,6 +442,20 @@ setInterval(() => {
   }
 }, 60 * 1000);
 
+// Agrega al prompt los precios actuales del inventario (mandan sobre el catálogo fijo)
+// y los productos con más stock, para que Miyu los recomiende primero.
+function promptConInventario() {
+  const activos = Object.values(inventario).filter((p) => p.activo !== false);
+  const precios = activos.map((p) => `- ${p.nombre}: $${p.precio}${p.stock <= 0 ? " (AGOTADO)" : ""}`).join("\n");
+  const top = activos.filter((p) => p.stock > 0).sort((a, b) => b.stock - a.stock).slice(0, 5)
+    .map((p) => `- ${p.nombre} ($${p.precio})`).join("\n");
+  return SYSTEM_PROMPT +
+    `\n\nPRECIOS ACTUALES (si no coinciden con el catálogo de arriba, usa SIEMPRE estos):\n${precios}` +
+    `\n\nPRIORIDAD DE VENTA: cuando la clienta pida recomendación, no sepa qué quiere o haya varias opciones que le sirvan, ` +
+    `ofrece primero estos productos (son los que tenemos con más inventario), sin forzarlos si no le sirven:\n${top}` +
+    `\nNunca ofrezcas productos AGOTADOS.`;
+}
+
 // ============================================================
 // SYSTEM PROMPT MIYU BEAUTY
 // ============================================================
@@ -453,7 +467,7 @@ CATÁLOGO COMPLETO:
 🌞 PROTECCIÓN SOLAR:
 - Beauty of Joseon Relief Sun Rice + Probiotics SPF50+ PA++++ $550
   → Viral en TikTok y YouTube de k-beauty. Acabado sérico, no deja residuo blanco. Ideal para piel mixta/grasa. Maquillistas lo usan como base antes del makeup porque no interfiere con la cobertura.
-- Bioré UV Aqua Rich Watery Essence SPF50+ $475
+- Bioré UV Aqua Rich Watery Essence SPF50+ $300
   → Clásico japonés amado por maquillistas profesionales. Textura de agua, se absorbe al instante. Perfecta bajo maquillaje o como protección diaria ligera.
 
 💆 CUIDADO CAPILAR:
@@ -465,7 +479,7 @@ CATÁLOGO COMPLETO:
   → Tratamiento intensivo de ceramidas que rellena la fibra capilar dañada. Popular entre quienes tienen cabello tratado químicamente o con calor constante.
 
 💄 MAQUILLAJE:
-- Tirtir Cushion Mask Fit Red (varios tonos) $800
+- Tirtir Cushion Mask Fit Red (varios tonos) $600
   → El cushion más famoso de K-beauty, tendencia en TikTok. Cobertura media-alta con acabado natural luminoso. Maquillistas coreanos lo usan en tutoriales porque cubre poros sin apelmazar ni verse artificial.
 - Mascara Heroine Make Long & Curl $450
   → Ícono del maquillaje japonés. Alarga y riza sin grumos, resistente al agua y sudor todo el día. Favorita de maquillistas para looks naturales y de artista.
@@ -486,7 +500,7 @@ CATÁLOGO COMPLETO:
   → De la marca viral de k-beauty. Desinflamar y descansar el contorno de ojos en 20 minutos. Artistas de maquillaje los usan antes de trabajar para preparar la zona.
 - Mixsoon Bean Eye Cream $625
   → Crema de contorno con extracto de soya. Hidratación y luminosidad bajo los ojos. Ideal para quienes tienen ojeras o piel seca en esa área.
-- Medicube PDRN Peptide Serum $695
+- Medicube PDRN Peptide Serum $500
   → Tecnología usada en clínicas de estética de Corea. El PDRN estimula la regeneración celular. Favorito de influencers de skincare para piel más firme y uniforme.
 - Medicube Kojic Acid Serum $695
   → Ácido kójico para manchas, hiperpigmentación y tono desigual. Alternativa más suave a tratamientos agresivos. Recomendado para unificar el tono de forma progresiva.
@@ -771,8 +785,8 @@ async function llamarClaude(telefono, mensajeUsuario) {
   const esIngles = detectarIngles(mensajeUsuario) ||
     /please respond in english|english please|can you speak english|do you speak english/i.test(mensajeUsuario);
   const systemFinal = esIngles
-    ? SYSTEM_PROMPT + "\n\nIMPORTANT: The customer is writing in English. You MUST respond in English for this entire conversation."
-    : SYSTEM_PROMPT;
+    ? promptConInventario() + "\n\nIMPORTANT: The customer is writing in English. You MUST respond in English for this entire conversation."
+    : promptConInventario();
 
   try {
     const res = await fetchConTimeout("https://api.anthropic.com/v1/messages", {
@@ -1389,15 +1403,13 @@ async function procesarMensaje(mensaje, opts = {}) {
         `¡Hola! 👋 Vi que llegaste desde uno de nuestros anuncios.\n\n` +
         `Soy *Miyu*, la asistente virtual de *Miyu Beauty Mzt* 💄\n\n` +
         `Cuéntame, ¿qué estás buscando hoy? Te ayudo a encontrar el producto perfecto para ti. 🌸`;
-      await enviarMensaje(telefono, saludoLead);
-
-      // Programar seguimiento si no responde en 24h
-      programarSeguimiento(telefono, "anuncio", 24);
-
-      // Si el primer mensaje del lead trae contenido (texto, foto, audio) lo procesamos
-      // normal abajo; si es vacío (solo abrió el chat) terminamos aquí.
+      // Si el primer mensaje trae contenido (casi siempre el texto prellenado del anuncio),
+      // Miyu lo contesta normal abajo; mandar también el saludo duplicaba la bienvenida.
       const traeContenido = tipo === "text" ? !!mensaje.text?.body : ["image", "audio"].includes(tipo);
-      if (!traeContenido) return;
+      if (!traeContenido) {
+        await enviarMensaje(telefono, saludoLead);
+        return;
+      }
     }
 
     // Métricas globales
@@ -1502,7 +1514,7 @@ async function procesarMensaje(mensaje, opts = {}) {
           body: JSON.stringify({
             model: "claude-opus-4-6",
             max_tokens: 1024,
-            system: SYSTEM_PROMPT,
+            system: promptConInventario(),
             messages: conversaciones[telefono].map(({ role, content }) => ({ role, content })),
           }),
         }, 40000); // 40 s — analizar imágenes tarda más que texto
