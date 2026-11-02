@@ -353,6 +353,7 @@ const inventario = {
   "medicube-kojic":       { id:"medicube-kojic",       nombre:"Medicube Kojic Acid Serum",                                   precio:695, stock:5,  stockMinimo:2, categoria:"skincare",   descripcion:"Ácido kójico para manchas e hiperpigmentación.", imagenUrl:"", activo:true, vendidos:0 },
   "anua-heartleaf-set":   { id:"anua-heartleaf-set",   nombre:"Set Anua Heartleaf (limpiador + tónico)",                    precio:720, stock:6,  stockMinimo:2, categoria:"skincare",   descripcion:"Marca viral k-beauty. Calma, hidrata, trata acné.", imagenUrl:"", activo:true, vendidos:0 },
   "mixsoon-glass-skin":   { id:"mixsoon-glass-skin",   nombre:"Mixsoon Glass Skin Kit",                                      precio:820, stock:4,  stockMinimo:2, categoria:"skincare",   descripcion:"Kit completo para el efecto glass skin coreano.", imagenUrl:"", activo:true, vendidos:0 },
+  "dr-althea-345":        { id:"dr-althea-345",        nombre:"Dr.Althea 345 Relief Cream 50ml",                            precio:399, stock:7,  stockMinimo:2, categoria:"skincare",   descripcion:"Crema calmante coreana. Hidrata, calma rojeces y granitos. Para todo tipo de piel, incluso sensible.", imagenUrl:"", activo:true, vendidos:0 },
   "parches-juanetes":     { id:"parches-juanetes",     nombre:"Parches para Juanetes Kyusoku Jikan",                         precio:120, stock:15, stockMinimo:5, categoria:"salud",      descripcion:"Alivio y corrección gradual para juanetes.", imagenUrl:"", activo:true, vendidos:0 },
 };
 
@@ -508,6 +509,8 @@ CATÁLOGO COMPLETO:
   → Marca k-beauty explosiva en redes. El tónico Heartleaf es uno de los más compartidos por dermatólogos en TikTok. Calma, hidrata y trata piel con acné o sensibilidad.
 - Mixsoon Glass Skin Kit $820
   → Kit completo para lograr el efecto "glass skin" coreano: piel translúcida, hidratada y sin poros visibles. Tendencia popularizada por maquillistas y celebridades de K-pop.
+- Dr.Althea 345 Relief Cream 50ml $399 (precio de lanzamiento, solo 7 piezas)
+  → Crema coreana viral para calmar e hidratar. Con niacinamida, centella y ceramidas: baja rojeces, ayuda con granitos y repara la barrera de la piel. Ligera, no grasosa, para todo tipo de piel incluso sensible.
 
 🏥 SALUD:
 - Parches para Juanetes Kyusoku Jikan $120
@@ -914,6 +917,7 @@ const NOMBRES_PRODUCTOS = {
   "kojic":"medicube-kojic",
   "anua":"anua-heartleaf-set", "heartleaf":"anua-heartleaf-set",
   "glass skin":"mixsoon-glass-skin",
+  "althea":"dr-althea-345", "345":"dr-althea-345", "relief cream":"dr-althea-345",
   "juanetes":"parches-juanetes",
 };
 
